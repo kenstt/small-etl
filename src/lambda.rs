@@ -1,13 +1,15 @@
 #[cfg(feature = "lambda")]
-use samll_etl::config::lambda::{LambdaConfig, S3Storage};
-#[cfg(feature = "lambda")]
-use samll_etl::core::{etl::EtlEngine, pipeline::SimplePipeline};
-#[cfg(feature = "lambda")]
 use aws_config::BehaviorVersion;
+#[cfg(feature = "lambda")]
+use aws_sdk_s3::config::Region;
 #[cfg(feature = "lambda")]
 use aws_sdk_s3::Client as S3Client;
 #[cfg(feature = "lambda")]
 use lambda_runtime::{run, service_fn, Error, LambdaEvent};
+#[cfg(feature = "lambda")]
+use samll_etl::config::lambda::{LambdaConfig, S3Storage};
+#[cfg(feature = "lambda")]
+use samll_etl::core::{etl::EtlEngine, pipeline::SimplePipeline};
 #[cfg(feature = "lambda")]
 use serde::{Deserialize, Serialize};
 
@@ -42,13 +44,19 @@ async fn function_handler(event: LambdaEvent<Request>) -> Result<Response, Error
         std::env::set_var("S3_PREFIX", prefix);
     }
 
-    // 創建AWS配置和S3客戶端
-    let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
-    let s3_client = S3Client::new(&config);
-
     // 創建Lambda配置
     let lambda_config = LambdaConfig::from_env()
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+
+    // 創建AWS配置和S3客戶端
+    let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
+    let region = Region::new(lambda_config.s3_region.clone());
+    // let s3_client = S3Client::new(&config);
+    let config = aws_sdk_s3::config::Builder::from(&config)
+        .region(region)
+        .force_path_style(true)
+        .build();
+    let s3_client = S3Client::from_conf(config);
 
     // 創建存儲和管道
     let storage = S3Storage::new(s3_client, lambda_config.s3_bucket.clone());

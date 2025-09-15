@@ -130,7 +130,7 @@ impl<S: Storage, C: ConfigProvider> Pipeline for SimplePipeline<S, C> {
             let mut zip = ZipWriter::new(std::io::Cursor::new(Vec::new()));
 
             // 添加CSV文件
-            zip.start_file::<_,()>("output.csv", FileOptions::default())?;
+            zip.start_file::<_, ()>("output.csv", FileOptions::default())?;
             zip.write_all(result.csv_output.as_bytes())?;
 
             // 添加TSV文件

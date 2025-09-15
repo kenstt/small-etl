@@ -1,31 +1,33 @@
 #!/bin/bash
 
 # AWS Lambda 構建腳本
-# 需要安裝 cross 工具: cargo install cross
+# 使用 cargo lambda 工具
 
-echo "Building for AWS Lambda (x86_64-unknown-linux-musl)..."
+echo "Building for AWS Lambda using cargo lambda..."
 
-# 安裝target (如果尚未安裝)
-rustup target add x86_64-unknown-linux-musl
+# 檢查是否已安裝 cargo lambda
+if ! command -v cargo-lambda &> /dev/null; then
+    echo "Installing cargo lambda..."
+    cargo install cargo-lambda
+fi
 
-# 使用musl target構建 (適合Lambda)
-cargo build --bin lambda --features lambda --target x86_64-unknown-linux-musl --release
+# 使用 cargo lambda 構建
+cargo lambda build --bin lambda --release
 
 echo "Build completed. Binary location:"
-echo "target/x86_64-unknown-linux-musl/release/lambda"
+echo "target/lambda/lambda/bootstrap"
 
 echo ""
-echo "To deploy to Lambda:"
-echo "1. Copy the binary to 'bootstrap' (Lambda custom runtime requirement)"
-echo "2. Zip the bootstrap file"
-echo "3. Upload to Lambda"
+echo "Creating deployment package..."
 
 # 創建部署包
-if [ -f "target/x86_64-unknown-linux-musl/release/lambda" ]; then
-    echo ""
-    echo "Creating deployment package..."
-    cp target/x86_64-unknown-linux-musl/release/lambda bootstrap
-    zip lambda-deployment.zip bootstrap
-    rm bootstrap
+if [ -f "target/lambda/lambda/bootstrap" ]; then
+    cd target/lambda/lambda
+    zip ../../../lambda-deployment.zip bootstrap
+    cd ../../..
     echo "✅ Deployment package created: lambda-deployment.zip"
+    echo ""
+    echo "Ready to deploy to AWS Lambda!"
+else
+    echo "❌ Binary not found. Build may have failed."
 fi

@@ -2,27 +2,53 @@
 
 ## 系統需求
 
-1. 安裝Linux target:
+### 方法1: 使用 cargo lambda (推薦)
 ```bash
-rustup target add x86_64-unknown-linux-musl
+# 安裝 cargo lambda
+cargo install cargo-lambda
+
+# 構建Lambda函數
+cargo lambda build --bin lambda --release
+```
+
+### 方法2: 使用Docker
+```bash
+# 使用官方Rust Docker鏡像構建
+docker run --rm -v $(pwd):/app -w /app rust:alpine sh -c "
+    apk add --no-cache musl-dev && \
+    rustup target add x86_64-unknown-linux-musl && \
+    cargo build --bin lambda --features lambda --target x86_64-unknown-linux-musl --release
+"
+```
+
+### 方法3: 使用Cross工具
+```bash
+# 安裝cross工具
+cargo install cross
+
+# 使用cross構建
+cross build --bin lambda --features lambda --target x86_64-unknown-linux-musl --release
 ```
 
 ## 構建Lambda函數
 
-### Windows用戶
-```cmd
-build-lambda.bat
+### 快速構建 (推薦)
+```bash
+# 一鍵構建和部署包創建
+cargo lambda build --bin lambda --release
+
+# 構建完成後，二進制文件位於:
+# target/lambda/lambda/bootstrap
 ```
 
-### Linux/Mac用戶
+### 使用腳本構建
 ```bash
+# Linux/Mac用戶
 chmod +x build-lambda.sh
 ./build-lambda.sh
-```
 
-## 手動構建
-```bash
-cargo build --bin lambda --features lambda --target x86_64-unknown-linux-musl --release
+# Windows用戶
+build-lambda.bat
 ```
 
 ## 部署到AWS Lambda
@@ -36,7 +62,18 @@ cp target/x86_64-unknown-linux-musl/release/lambda bootstrap
 zip lambda-deployment.zip bootstrap
 ```
 
-### 2. AWS CLI部署
+### 2. 使用 cargo lambda 部署 (推薦)
+```bash
+# 直接部署到AWS (需要配置AWS credentials)
+cargo lambda deploy --bin lambda \
+  --env-var S3_BUCKET=your-bucket-name \
+  --env-var API_ENDPOINT=https://jsonplaceholder.typicode.com/posts \
+  --env-var S3_PREFIX=etl-output \
+  --timeout 300 \
+  --memory 512
+```
+
+### 3. AWS CLI部署
 ```bash
 # 創建Lambda函數
 aws lambda create-function \
