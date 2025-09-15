@@ -1,9 +1,16 @@
 pub mod cli;
 
+#[cfg(feature = "lambda")]
+pub mod lambda;
+
+#[cfg(feature = "cli")]
 use crate::core::ConfigProvider;
+#[cfg(feature = "cli")]
 use clap::Parser;
+#[cfg(feature = "cli")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "cli")]
 #[derive(Debug, Clone, Serialize, Deserialize, Parser)]
 #[command(name = "samll-etl")]
 #[command(about = "A small ETL tool for data processing")]
@@ -24,6 +31,7 @@ pub struct CliConfig {
     pub verbose: bool,
 }
 
+#[cfg(feature = "cli")]
 impl ConfigProvider for CliConfig {
     fn api_endpoint(&self) -> &str {
         &self.api_endpoint
