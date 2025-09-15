@@ -29,6 +29,9 @@ pub struct CliConfig {
 
     #[arg(long, help = "Enable verbose output")]
     pub verbose: bool,
+
+    #[arg(long, help = "Enable system resource monitoring (CPU/Memory)")]
+    pub monitor: bool,
 }
 
 #[cfg(feature = "cli")]

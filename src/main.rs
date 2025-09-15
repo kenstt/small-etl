@@ -14,12 +14,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing::debug!("CLI config: {:?}", config);
     }
 
+    let monitor_enabled = config.monitor;
+    if monitor_enabled {
+        tracing::info!("🔍 System monitoring enabled");
+    }
+
     // 創建存儲和管道
     let storage = LocalStorage::new(config.output_path.clone());
     let pipeline = SimplePipeline::new(storage, config);
 
     // 創建ETL引擎並運行
-    let engine = EtlEngine::new(pipeline);
+    let engine = EtlEngine::new_with_monitoring(pipeline, monitor_enabled);
 
     match engine.run().await {
         Ok(output_path) => {

@@ -16,6 +16,7 @@ zip = "5.1"
 async-trait = "0.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+sysinfo = { version = "0.37", optional = true }
 
 # Lambda dependencies (optional)
 lambda_runtime = { version = "0.14", optional = true }
@@ -28,7 +29,7 @@ tempfile = "3.8"
 
 [features]
 default = ["cli"]
-cli = ["clap"]
+cli = ["clap", "sysinfo"]
 lambda = ["lambda_runtime", "aws-sdk-s3", "aws-config"]
 
 [[bin]]
