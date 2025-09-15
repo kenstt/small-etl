@@ -17,6 +17,7 @@ async-trait = "0.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 sysinfo = { version = "0.37", optional = true }
+url = "2.5"
 
 # Lambda dependencies (optional)
 lambda_runtime = { version = "0.14", optional = true }

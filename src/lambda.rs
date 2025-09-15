@@ -13,7 +13,7 @@ use samll_etl::config::lambda::{LambdaConfig, S3Storage};
 #[cfg(feature = "lambda")]
 use samll_etl::core::{etl::EtlEngine, pipeline::SimplePipeline};
 #[cfg(feature = "lambda")]
-use samll_etl::utils::logger;
+use samll_etl::utils::{logger, validation::Validate};
 #[cfg(feature = "lambda")]
 use serde::{Deserialize, Serialize};
 
@@ -52,6 +52,13 @@ async fn function_handler(event: LambdaEvent<Request>) -> Result<Response, Error
     // 創建Lambda配置
     let lambda_config = LambdaConfig::from_env()
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+
+    // 驗證配置
+    lambda_config.validate()
+        .map_err(|e| {
+            tracing::error!("Lambda configuration validation failed: {}", e);
+            Box::new(e) as Box<dyn std::error::Error + Send + Sync>
+        })?;
 
     tracing::info!(
         "Lambda config - bucket: {}, region: {}, prefix: {}",

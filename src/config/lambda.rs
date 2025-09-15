@@ -64,6 +64,90 @@ impl ConfigProvider for LambdaConfig {
 }
 
 #[cfg(feature = "lambda")]
+impl crate::utils::validation::Validate for LambdaConfig {
+    fn validate(&self) -> crate::utils::error::Result<()> {
+        use crate::utils::validation::*;
+
+        // 驗證API端點
+        validate_url("api_endpoint", &self.api_endpoint)?;
+
+        // 驗證S3 bucket名稱
+        validate_s3_bucket_name("s3_bucket", &self.s3_bucket)?;
+
+        // 驗證S3前綴
+        validate_non_empty_string("s3_prefix", &self.s3_prefix)?;
+
+        // 驗證區域
+        validate_aws_region("s3_region", &self.s3_region)?;
+
+        // 驗證並發請求數
+        validate_positive_number("concurrent_requests", self.concurrent_requests, 1)?;
+        validate_range("concurrent_requests", self.concurrent_requests, 1, 100)?;
+
+        tracing::info!("✅ Lambda configuration validation passed");
+        Ok(())
+    }
+}
+
+#[cfg(feature = "lambda")]
+fn validate_s3_bucket_name(field_name: &str, bucket_name: &str) -> crate::utils::error::Result<()> {
+    use crate::utils::error::EtlError;
+
+    if bucket_name.is_empty() {
+        return Err(EtlError::InvalidConfigValueError {
+            field: field_name.to_string(),
+            value: bucket_name.to_string(),
+            reason: "S3 bucket name cannot be empty".to_string(),
+        });
+    }
+
+    if bucket_name.len() < 3 || bucket_name.len() > 63 {
+        return Err(EtlError::InvalidConfigValueError {
+            field: field_name.to_string(),
+            value: bucket_name.to_string(),
+            reason: "S3 bucket name must be between 3 and 63 characters".to_string(),
+        });
+    }
+
+    if !bucket_name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '.') {
+        return Err(EtlError::InvalidConfigValueError {
+            field: field_name.to_string(),
+            value: bucket_name.to_string(),
+            reason: "S3 bucket name can only contain lowercase letters, numbers, hyphens, and dots".to_string(),
+        });
+    }
+
+    if bucket_name.starts_with('-') || bucket_name.ends_with('-') {
+        return Err(EtlError::InvalidConfigValueError {
+            field: field_name.to_string(),
+            value: bucket_name.to_string(),
+            reason: "S3 bucket name cannot start or end with a hyphen".to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "lambda")]
+fn validate_aws_region(field_name: &str, region: &str) -> crate::utils::error::Result<()> {
+    use crate::utils::error::EtlError;
+    use crate::utils::validation::validate_non_empty_string;
+
+    validate_non_empty_string(field_name, region)?;
+
+    // AWS region format validation
+    if !region.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+        return Err(EtlError::InvalidConfigValueError {
+            field: field_name.to_string(),
+            value: region.to_string(),
+            reason: "AWS region can only contain lowercase letters, numbers, and hyphens".to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "lambda")]
 #[derive(Debug, Clone)]
 pub struct S3Storage {
     client: S3Client,

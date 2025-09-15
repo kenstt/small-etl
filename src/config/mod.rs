@@ -52,3 +52,28 @@ impl ConfigProvider for CliConfig {
         self.concurrent_requests
     }
 }
+
+#[cfg(feature = "cli")]
+impl crate::utils::validation::Validate for CliConfig {
+    fn validate(&self) -> crate::utils::error::Result<()> {
+        use crate::utils::validation::*;
+
+        // 驗證API端點
+        validate_url("api_endpoint", &self.api_endpoint)?;
+
+        // 驗證輸出路徑
+        validate_path("output_path", &self.output_path)?;
+
+        // 驗證並發請求數
+        validate_positive_number("concurrent_requests", self.concurrent_requests, 1)?;
+        validate_range("concurrent_requests", self.concurrent_requests, 1, 100)?;
+
+        // 驗證lookup文件
+        if !self.lookup_files.is_empty() {
+            validate_file_extensions("lookup_files", &self.lookup_files, &["csv", "tsv", "json"])?;
+        }
+
+        tracing::info!("✅ Configuration validation passed");
+        Ok(())
+    }
+}
