@@ -4,21 +4,21 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tokio = { version = "1.0", features = ["full"] }
-reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
+tokio = { version = "1.47", features = ["full"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 csv = "1.3"
-clap = { version = "4.0", features = ["derive"], optional = true }
+clap = { version = "4.5", features = ["derive"], optional = true }
 anyhow = "1.0"
-thiserror = "1.0"
-zip = "0.6"
+thiserror = "2.0"
+zip = "5.1"
 async-trait = "0.1"
 
 # Lambda dependencies (optional)
-lambda_runtime = { version = "0.8", optional = true }
-aws-sdk-s3 = { version = "1.0", optional = true }
-aws-config = { version = "1.0", optional = true }
+lambda_runtime = { version = "0.14", optional = true }
+aws-sdk-s3 = { version = "1.106", optional = true }
+aws-config = { version = "1.8", optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", optional = true }
 

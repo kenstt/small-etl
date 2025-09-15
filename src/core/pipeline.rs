@@ -130,16 +130,16 @@ impl<S: Storage, C: ConfigProvider> Pipeline for SimplePipeline<S, C> {
             let mut zip = ZipWriter::new(std::io::Cursor::new(Vec::new()));
 
             // 添加CSV文件
-            zip.start_file("output.csv", FileOptions::default())?;
+            zip.start_file::<_,()>("output.csv", FileOptions::default())?;
             zip.write_all(result.csv_output.as_bytes())?;
 
             // 添加TSV文件
-            zip.start_file("output.tsv", FileOptions::default())?;
+            zip.start_file::<_, ()>("output.tsv", FileOptions::default())?;
             zip.write_all(result.tsv_output.as_bytes())?;
 
             // 添加中繼結果JSON
             if !result.intermediate_data.is_empty() {
-                zip.start_file("intermediate.json", FileOptions::default())?;
+                zip.start_file::<_, ()>("intermediate.json", FileOptions::default())?;
                 let json_data = serde_json::to_string_pretty(&result.intermediate_data)?;
                 zip.write_all(json_data.as_bytes())?;
             }
