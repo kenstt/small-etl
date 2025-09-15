@@ -11,26 +11,39 @@ impl<P: Pipeline> EtlEngine<P> {
     }
 
     pub async fn run(&self) -> Result<String> {
-        println!("Starting ETL process...");
+        tracing::info!("Starting ETL process");
 
         // Extract
-        println!("Extracting data...");
+        tracing::info!("Phase 1: Extracting data");
+        let start_time = std::time::Instant::now();
         let raw_data = self.pipeline.extract().await?;
-        println!("Extracted {} records", raw_data.len());
+        let extract_duration = start_time.elapsed();
+        tracing::info!(
+            "✅ Extracted {} records in {:?}",
+            raw_data.len(),
+            extract_duration
+        );
 
         // Transform
-        println!("Transforming data...");
+        tracing::info!("Phase 2: Transforming data");
+        let start_time = std::time::Instant::now();
         let transformed_result = self.pipeline.transform(raw_data).await?;
-        println!(
-            "Transformed {} records",
-            transformed_result.processed_records.len()
+        let transform_duration = start_time.elapsed();
+        tracing::info!(
+            "✅ Transformed {} records, {} intermediate records in {:?}",
+            transformed_result.processed_records.len(),
+            transformed_result.intermediate_data.len(),
+            transform_duration
         );
 
         // Load
-        println!("Loading data...");
+        tracing::info!("Phase 3: Loading data");
+        let start_time = std::time::Instant::now();
         let output_path = self.pipeline.load(transformed_result).await?;
-        println!("Output saved to: {}", output_path);
+        let load_duration = start_time.elapsed();
+        tracing::info!("✅ Data loaded to: {} in {:?}", output_path, load_duration);
 
+        tracing::info!("🎉 ETL process completed successfully");
         Ok(output_path)
     }
 }

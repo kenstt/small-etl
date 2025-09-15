@@ -1,3 +1,5 @@
+use std::fs::File;
+use std::io::Read;
 #[cfg(feature = "lambda")]
 use aws_config::BehaviorVersion;
 #[cfg(feature = "lambda")]
@@ -11,10 +13,12 @@ use samll_etl::config::lambda::{LambdaConfig, S3Storage};
 #[cfg(feature = "lambda")]
 use samll_etl::core::{etl::EtlEngine, pipeline::SimplePipeline};
 #[cfg(feature = "lambda")]
+use samll_etl::utils::logger;
+#[cfg(feature = "lambda")]
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "lambda")]
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct Request {
     pub api_endpoint: Option<String>,
     pub s3_bucket: Option<String>,
@@ -22,7 +26,7 @@ pub struct Request {
 }
 
 #[cfg(feature = "lambda")]
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct Response {
     pub message: String,
     pub output_path: String,
@@ -32,6 +36,7 @@ pub struct Response {
 #[cfg(feature = "lambda")]
 async fn function_handler(event: LambdaEvent<Request>) -> Result<Response, Error> {
     tracing::info!("Starting ETL Lambda function");
+    tracing::debug!("Lambda event: {:?}", event.payload);
 
     // 設置環境變量 (如果事件中有的話)
     if let Some(endpoint) = &event.payload.api_endpoint {
@@ -47,6 +52,13 @@ async fn function_handler(event: LambdaEvent<Request>) -> Result<Response, Error
     // 創建Lambda配置
     let lambda_config = LambdaConfig::from_env()
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+
+    tracing::info!(
+        "Lambda config - bucket: {}, region: {}, prefix: {}",
+        lambda_config.s3_bucket,
+        lambda_config.s3_region,
+        lambda_config.s3_prefix
+    );
 
     // 創建AWS配置和S3客戶端
     let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
@@ -71,22 +83,21 @@ async fn function_handler(event: LambdaEvent<Request>) -> Result<Response, Error
 
     let response = Response {
         message: "ETL process completed successfully".to_string(),
-        output_path,
+        output_path: output_path.clone(),
         records_processed: 0, // TODO: 實際記錄處理數量
     };
 
     tracing::info!("ETL Lambda function completed successfully");
+    tracing::info!("Response: {:?}", response);
     Ok(response)
 }
 
 #[cfg(feature = "lambda")]
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .with_target(false)
-        .without_time()
-        .init();
+    // 初始化Lambda日誌
+    logger::init_lambda_logger();
 
+    tracing::info!("Lambda runtime starting...");
     run(service_fn(function_handler)).await
 }

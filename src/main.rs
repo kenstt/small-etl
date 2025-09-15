@@ -1,12 +1,17 @@
 use clap::Parser;
 use samll_etl::{CliConfig, EtlEngine, LocalStorage, SimplePipeline};
+use samll_etl::utils::logger;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = CliConfig::parse();
 
+    // 初始化日誌
+    logger::init_cli_logger(config.verbose);
+
+    tracing::info!("Starting samll-etl CLI");
     if config.verbose {
-        println!("Starting ETL with config: {:?}", config);
+        tracing::debug!("CLI config: {:?}", config);
     }
 
     // 創建存儲和管道
@@ -18,10 +23,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match engine.run().await {
         Ok(output_path) => {
+            tracing::info!("✅ ETL process completed successfully!");
+            tracing::info!("📁 Output saved to: {}", output_path);
             println!("✅ ETL process completed successfully!");
             println!("📁 Output saved to: {}", output_path);
         }
         Err(e) => {
+            tracing::error!("❌ ETL process failed: {}", e);
             eprintln!("❌ ETL process failed: {}", e);
             std::process::exit(1);
         }

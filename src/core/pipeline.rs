@@ -27,7 +27,10 @@ impl<S: Storage, C: ConfigProvider> Pipeline for SimplePipeline<S, C> {
         let mut records = Vec::new();
 
         // 模擬API調用
+        tracing::debug!("Making API request to: {}", self.config.api_endpoint());
         let response = self.client.get(self.config.api_endpoint()).send().await?;
+
+        tracing::debug!("API response status: {}", response.status());
 
         if response.status().is_success() {
             let json_data: serde_json::Value = response.json().await?;
@@ -53,6 +56,7 @@ impl<S: Storage, C: ConfigProvider> Pipeline for SimplePipeline<S, C> {
 
         // 如果沒有API數據，創建一些示例數據
         if records.is_empty() {
+            tracing::warn!("No data from API, generating sample data");
             for i in 1..=5 {
                 let mut data = HashMap::new();
                 data.insert("id".to_string(), serde_json::Value::Number(i.into()));
@@ -125,6 +129,9 @@ impl<S: Storage, C: ConfigProvider> Pipeline for SimplePipeline<S, C> {
     async fn load(&self, result: TransformResult) -> Result<String> {
         let output_path = format!("{}/etl_output.zip", self.config.output_path());
 
+        tracing::debug!("Creating ZIP file with {} files",
+            2 + if result.intermediate_data.is_empty() { 0 } else { 1 });
+
         // 創建ZIP文件
         let zip_data = {
             let mut zip = ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -150,8 +157,10 @@ impl<S: Storage, C: ConfigProvider> Pipeline for SimplePipeline<S, C> {
         };
 
         // 保存ZIP文件
+        tracing::debug!("Writing ZIP file ({} bytes) to storage", zip_data.len());
         self.storage.write_file("etl_output.zip", &zip_data).await?;
 
+        tracing::debug!("ZIP file saved successfully");
         Ok(output_path)
     }
 }

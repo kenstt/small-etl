@@ -14,13 +14,13 @@ anyhow = "1.0"
 thiserror = "2.0"
 zip = "5.1"
 async-trait = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Lambda dependencies (optional)
 lambda_runtime = { version = "0.14", optional = true }
 aws-sdk-s3 = { version = "1.106", optional = true }
 aws-config = { version = "1.8", optional = true }
-tracing = { version = "0.1", optional = true }
-tracing-subscriber = { version = "0.3", optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
@@ -29,7 +29,7 @@ tempfile = "3.8"
 [features]
 default = ["cli"]
 cli = ["clap"]
-lambda = ["lambda_runtime", "aws-sdk-s3", "aws-config", "tracing", "tracing-subscriber"]
+lambda = ["lambda_runtime", "aws-sdk-s3", "aws-config"]
 
 [[bin]]
 name = "lambda"
