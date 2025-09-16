@@ -151,7 +151,7 @@ impl PipelineSequence {
     pub fn with_monitoring(mut self, enabled: bool) -> Self {
         self.monitor_enabled = enabled;
         if enabled {
-            self.monitor = Some(SystemMonitor::new());
+            self.monitor = Some(SystemMonitor::new(enabled));
         }
         self
     }
@@ -168,7 +168,7 @@ impl PipelineSequence {
 
         if self.monitor_enabled {
             if let Some(monitor) = &self.monitor {
-                monitor.start().await;
+                monitor.log_stats("Pipeline execution started.");
             }
         }
 
@@ -218,9 +218,13 @@ impl PipelineSequence {
 
         if self.monitor_enabled {
             if let Some(monitor) = &self.monitor {
-                monitor.stop().await;
-                let metrics = monitor.get_metrics().await;
-                tracing::info!("📊 System metrics during execution: {:?}", metrics);
+                monitor.log_stats("Pipeline execution completed.");
+                {
+                    if let Some(metrics) = monitor.get_stats()
+                    {
+                        tracing::info!("📊 System metrics during execution: {:?}", metrics)
+                    };
+                }
             }
         }
 

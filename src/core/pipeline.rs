@@ -1,16 +1,12 @@
-use crate::core::{ConfigProvider, Pipeline, Record, Storage, TransformResult};
-use crate::utils::error::Result;
-use reqwest::Client;
-use std::collections::HashMap;
-use std::io::Write;
-use zip::write::{FileOptions, ZipWriter};
 
 pub use crate::app::pipelines::simple_pipeline::SimplePipeline;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::error::EtlError;
+    use crate::domain::model::{Record, TransformResult};
+    use crate::domain::ports::{ConfigProvider, Pipeline, Storage};
+    use crate::utils::error::{EtlError, Result};
     use httpmock::prelude::*;
     use std::collections::HashMap;
     use std::sync::Arc;

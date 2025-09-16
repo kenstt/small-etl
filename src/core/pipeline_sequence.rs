@@ -1,9 +1,3 @@
-use crate::core::{Record, TransformResult};
-use crate::utils::error::{EtlError, Result};
-use crate::utils::monitor::SystemMonitor;
-use std::collections::HashMap;
-use std::time::Instant;
-
 /// Pipeline 執行結果
 pub use crate::app::pipelines::sequence_pipeline::PipelineResult;
 
@@ -16,16 +10,12 @@ pub use crate::app::pipelines::sequence_pipeline::ContextualPipeline;
 pub use crate::app::pipelines::sequence_pipeline::PipelineSequence;
 
 
-/// Pipeline 執行結果內部結構
-struct PipelineExecutionResult {
-    processed_records: Vec<Record>,
-    output_path: String,
-    metadata: HashMap<String, serde_json::Value>,
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::model::{Record, TransformResult};
+    use crate::utils::error::Result;
     use std::collections::HashMap;
 
     struct MockPipeline {

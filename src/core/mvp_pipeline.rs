@@ -1,10 +1,3 @@
-use crate::config::toml_config::TomlConfig;
-use crate::core::{Pipeline, Record, Storage, TransformResult};
-use crate::utils::error::Result;
-use reqwest::Client;
-use std::collections::HashMap;
-use std::io::Write;
-use zip::write::{FileOptions, ZipWriter};
 
 pub use crate::app::pipelines::mvp_pipeline::MvpPipeline;
 
@@ -12,6 +5,9 @@ pub use crate::app::pipelines::mvp_pipeline::MvpPipeline;
 mod tests {
     use super::*;
     use crate::config::toml_config::TomlConfig;
+    use crate::domain::model::{Record, TransformResult};
+    use crate::domain::ports::{Pipeline, Storage};
+    use crate::utils::error::Result;
     use httpmock::prelude::*;
     use std::collections::HashMap;
     use std::sync::Arc;
