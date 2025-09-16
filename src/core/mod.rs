@@ -1,4 +1,5 @@
 pub mod etl;
+pub mod mvp_pipeline;
 pub mod pipeline;
 
 use crate::utils::error::Result;
