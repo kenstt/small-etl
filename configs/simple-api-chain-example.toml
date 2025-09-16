@@ -1,0 +1,93 @@
+# 簡化版 API 鏈式呼叫範例
+# 第一個 API 取得用戶列表，第二個 API 使用用戶 ID 取得詳細資訊
+
+[sequence]
+name = "api-chain-example"
+description = "簡單的 API 鏈式呼叫範例：取得用戶 ID -> 取得用戶詳情"
+version = "1.0.0"
+execution_order = ["get-users", "get-user-details"]
+
+[global]
+working_directory = "./simple-output"
+
+[monitoring]
+enabled = true
+log_level = "info"
+
+# Pipeline 1: 取得用戶列表
+[[pipelines]]
+name = "get-users"
+description = "從 API 取得用戶列表"
+enabled = true
+
+[pipelines.source]
+type = "api"
+endpoint = "https://jsonplaceholder.typicode.com/users"
+timeout_seconds = 30
+
+[pipelines.source.headers]
+"User-Agent" = "Simple-ETL/1.0"
+
+[pipelines.extract]
+max_records = 3  # 只取前 3 個用戶
+
+[pipelines.extract.field_mapping]
+id = "user_id"
+name = "user_name"
+email = "user_email"
+username = "username"
+
+[pipelines.transform]
+
+[pipelines.transform.data_enrichment]
+# 將 user_id 添加到共享數據中供下一個 Pipeline 使用
+computed_fields = { "pipeline_source" = "get-users" }
+
+[pipelines.transform.intermediate]
+export_to_shared = true
+shared_key = "user_ids"
+
+[pipelines.load]
+output_path = "./simple-output"
+output_formats = ["json"]
+filename_pattern = "users_{timestamp}"
+
+# Pipeline 2: 取得用戶詳細資訊
+[[pipelines]]
+name = "get-user-details"
+description = "使用用戶 ID 取得詳細資訊"
+enabled = true
+dependencies = ["get-users"]
+
+[pipelines.source]
+type = "api"
+endpoint = "https://jsonplaceholder.typicode.com/users/{user_id}"
+timeout_seconds = 30
+
+[pipelines.source.data_source]
+use_previous_output = true
+from_pipeline = "get-users"
+merge_with_api = false  # 不合併，完全使用新的 API 數據
+
+[pipelines.source.headers]
+"User-Agent" = "Simple-ETL/1.0"
+
+[pipelines.extract]
+# 對於每個從前一個 Pipeline 來的用戶，都會呼叫詳細 API
+
+[pipelines.extract.field_mapping]
+id = "user_id"
+name = "full_name"
+email = "email_address"
+phone = "phone_number"
+website = "website_url"
+
+[pipelines.transform]
+
+[pipelines.transform.data_enrichment]
+computed_fields = { "detail_source" = "get-user-details", "fetch_timestamp" = "pipeline_name" }
+
+[pipelines.load]
+output_path = "./simple-output"
+output_formats = ["json", "csv"]
+filename_pattern = "user_details_{execution_id}"

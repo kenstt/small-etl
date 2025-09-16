@@ -1,0 +1,67 @@
+# 超簡化的 API 鏈式呼叫演示
+# 展示從第一個 API 取得參數，用於第二個 API 呼叫
+
+[sequence]
+name = "simple-demo"
+description = "演示：取得第一個用戶 ID -> 取得該用戶詳情"
+version = "1.0.0"
+execution_order = ["get-first-user", "get-user-detail"]
+
+[global]
+working_directory = "./demo-output"
+
+[monitoring]
+enabled = true
+
+# Pipeline 1: 取得第一個用戶
+[[pipelines]]
+name = "get-first-user"
+description = "取得第一個用戶的基本資訊"
+enabled = true
+
+[pipelines.source]
+type = "api"
+endpoint = "https://jsonplaceholder.typicode.com/users/1"
+
+[pipelines.extract]
+
+[pipelines.extract.field_mapping]
+id = "user_id"
+name = "name"
+email = "email"
+
+[pipelines.transform]
+
+[pipelines.load]
+output_path = "./demo-output"
+output_formats = ["json"]
+
+# Pipeline 2: 使用用戶 ID 取得詳細資訊
+[[pipelines]]
+name = "get-user-detail"
+description = "使用用戶 ID 取得完整用戶資訊"
+enabled = true
+dependencies = ["get-first-user"]
+
+[pipelines.source]
+type = "api"
+endpoint = "https://jsonplaceholder.typicode.com/users/{user_id}"
+
+[pipelines.source.data_source]
+use_previous_output = true
+from_pipeline = "get-first-user"
+
+[pipelines.extract]
+
+[pipelines.extract.field_mapping]
+id = "detail_id"
+name = "full_name"
+email = "email_address"
+phone = "phone_number"
+website = "website"
+
+[pipelines.transform]
+
+[pipelines.load]
+output_path = "./demo-output"
+output_formats = ["json"]
