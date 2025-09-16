@@ -138,16 +138,16 @@ mod tests {
     }
 
     struct MockPipeline {
-        storage: MockStorage,
-        config: MockConfig,
+        _storage: MockStorage,
+        _config: MockConfig,
         should_fail_at: Option<String>, // "extract", "transform", or "load"
     }
 
     impl MockPipeline {
         fn new() -> Self {
             Self {
-                storage: MockStorage::new(),
-                config: MockConfig::new(),
+                _storage: MockStorage::new(),
+                _config: MockConfig::new(),
                 should_fail_at: None,
             }
         }

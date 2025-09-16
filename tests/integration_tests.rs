@@ -1,6 +1,5 @@
 use httpmock::prelude::*;
 use samll_etl::{CliConfig, EtlEngine, LocalStorage, SimplePipeline};
-use std::collections::HashMap;
 use tempfile::TempDir;
 
 #[tokio::test]
@@ -25,7 +24,7 @@ async fn test_end_to_end_etl_with_real_http() {
     });
 
     // Create configuration for CLI
-    let mut config = CliConfig {
+    let config = CliConfig {
         api_endpoint: server.url("/products"),
         output_path: output_path.clone(),
         lookup_files: vec![],
@@ -111,7 +110,7 @@ async fn test_end_to_end_with_api_failure() {
     api_mock.assert();
 
     // Verify output file exists (with sample data)
-    let output_file_path = result.unwrap();
+    let _output_file_path = result.unwrap();
     let full_path = std::path::Path::new(&output_path).join("etl_output.zip");
     assert!(full_path.exists());
 }

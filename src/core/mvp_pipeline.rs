@@ -412,6 +412,7 @@ mod tests {
             }
         }
 
+        #[allow(dead_code)]
         async fn get_file(&self, path: &str) -> Option<Vec<u8>> {
             let files = self.files.lock().await;
             files.get(path).cloned()
