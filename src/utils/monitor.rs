@@ -1,9 +1,9 @@
 #[cfg(feature = "cli")]
-use sysinfo::{Pid, RefreshKind, System};
-#[cfg(feature = "cli")]
 use std::sync::{Arc, Mutex};
 #[cfg(feature = "cli")]
 use std::time::{Duration, Instant};
+#[cfg(feature = "cli")]
+use sysinfo::{Pid, RefreshKind, System};
 
 #[cfg(feature = "cli")]
 #[derive(Debug, Clone)]
@@ -27,9 +27,7 @@ pub struct SystemMonitor {
 #[cfg(feature = "cli")]
 impl SystemMonitor {
     pub fn new(enabled: bool) -> Self {
-        let mut system = System::new_with_specifics(
-            RefreshKind::everything()
-        );
+        let mut system = System::new_with_specifics(RefreshKind::everything());
 
         let pid = sysinfo::get_current_pid().expect("Failed to get current PID");
 
@@ -94,8 +92,11 @@ impl SystemMonitor {
 
     pub fn log_final_stats(&self) {
         if let Some(stats) = self.get_stats() {
-            tracing::info!("📊 Final Stats - Total Time: {:?}, Peak Memory: {}MB",
-                stats.elapsed_time, stats.peak_memory_mb);
+            tracing::info!(
+                "📊 Final Stats - Total Time: {:?}, Peak Memory: {}MB",
+                stats.elapsed_time,
+                stats.peak_memory_mb
+            );
         }
     }
 

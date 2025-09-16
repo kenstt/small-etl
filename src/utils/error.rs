@@ -157,8 +157,9 @@ impl EtlError {
 
             EtlError::AuthenticationError { .. } => ErrorCategory::Authentication,
 
-            EtlError::InsufficientDataError { .. }
-            | EtlError::DataQualityError { .. } => ErrorCategory::BusinessLogic,
+            EtlError::InsufficientDataError { .. } | EtlError::DataQualityError { .. } => {
+                ErrorCategory::BusinessLogic
+            }
 
             EtlError::ResourceExhaustedError { .. } => ErrorCategory::System,
 

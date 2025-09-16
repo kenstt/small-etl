@@ -16,16 +16,14 @@ pub fn validate_url(field_name: &str, url_str: &str) -> Result<()> {
     }
 
     match Url::parse(url_str) {
-        Ok(url) => {
-            match url.scheme() {
-                "http" | "https" => Ok(()),
-                scheme => Err(EtlError::InvalidConfigValueError {
-                    field: field_name.to_string(),
-                    value: url_str.to_string(),
-                    reason: format!("Unsupported URL scheme: {}", scheme),
-                }),
-            }
-        }
+        Ok(url) => match url.scheme() {
+            "http" | "https" => Ok(()),
+            scheme => Err(EtlError::InvalidConfigValueError {
+                field: field_name.to_string(),
+                value: url_str.to_string(),
+                reason: format!("Unsupported URL scheme: {}", scheme),
+            }),
+        },
         Err(e) => Err(EtlError::InvalidConfigValueError {
             field: field_name.to_string(),
             value: url_str.to_string(),
@@ -65,7 +63,11 @@ pub fn validate_positive_number(field_name: &str, value: usize, min_value: usize
     Ok(())
 }
 
-pub fn validate_file_extensions(field_name: &str, files: &[String], allowed_extensions: &[&str]) -> Result<()> {
+pub fn validate_file_extensions(
+    field_name: &str,
+    files: &[String],
+    allowed_extensions: &[&str],
+) -> Result<()> {
     let allowed_set: HashSet<&str> = allowed_extensions.iter().copied().collect();
 
     for file in files {

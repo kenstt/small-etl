@@ -1,6 +1,6 @@
 use clap::Parser;
-use samll_etl::{CliConfig, EtlEngine, LocalStorage, SimplePipeline};
 use samll_etl::utils::{logger, validation::Validate};
+use samll_etl::{CliConfig, EtlEngine, LocalStorage, SimplePipeline};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -57,9 +57,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // 根據錯誤嚴重程度決定退出碼
             let exit_code = match e.severity() {
-                samll_etl::utils::error::ErrorSeverity::Low => 0,      // 警告，但成功
-                samll_etl::utils::error::ErrorSeverity::Medium => 2,   // 重試錯誤
-                samll_etl::utils::error::ErrorSeverity::High => 1,     // 處理錯誤
+                samll_etl::utils::error::ErrorSeverity::Low => 0, // 警告，但成功
+                samll_etl::utils::error::ErrorSeverity::Medium => 2, // 重試錯誤
+                samll_etl::utils::error::ErrorSeverity::High => 1, // 處理錯誤
                 samll_etl::utils::error::ErrorSeverity::Critical => 3, // 系統錯誤
             };
 

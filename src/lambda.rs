@@ -1,5 +1,3 @@
-use std::fs::File;
-use std::io::Read;
 #[cfg(feature = "lambda")]
 use aws_config::BehaviorVersion;
 #[cfg(feature = "lambda")]
@@ -16,6 +14,8 @@ use samll_etl::core::{etl::EtlEngine, pipeline::SimplePipeline};
 use samll_etl::utils::{logger, validation::Validate};
 #[cfg(feature = "lambda")]
 use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::Read;
 
 #[cfg(feature = "lambda")]
 #[derive(Debug, Deserialize)]
@@ -54,11 +54,10 @@ async fn function_handler(event: LambdaEvent<Request>) -> Result<Response, Error
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
 
     // 驗證配置
-    lambda_config.validate()
-        .map_err(|e| {
-            tracing::error!("Lambda configuration validation failed: {}", e);
-            Box::new(e) as Box<dyn std::error::Error + Send + Sync>
-        })?;
+    lambda_config.validate().map_err(|e| {
+        tracing::error!("Lambda configuration validation failed: {}", e);
+        Box::new(e) as Box<dyn std::error::Error + Send + Sync>
+    })?;
 
     tracing::info!(
         "Lambda config - bucket: {}, region: {}, prefix: {}",

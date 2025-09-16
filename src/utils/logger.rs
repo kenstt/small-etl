@@ -2,11 +2,9 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 
 pub fn init_cli_logger(verbose: bool) {
     let filter = if verbose {
-        EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| EnvFilter::new("samll_etl=debug,info"))
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("samll_etl=debug,info"))
     } else {
-        EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| EnvFilter::new("samll_etl=info"))
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("samll_etl=info"))
     };
 
     tracing_subscriber::registry()
@@ -23,8 +21,8 @@ pub fn init_cli_logger(verbose: bool) {
 }
 
 pub fn init_lambda_logger() {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("samll_etl=info"));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("samll_etl=info"));
 
     tracing_subscriber::registry()
         .with(filter)

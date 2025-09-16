@@ -109,11 +109,15 @@ fn validate_s3_bucket_name(field_name: &str, bucket_name: &str) -> crate::utils:
         });
     }
 
-    if !bucket_name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '.') {
+    if !bucket_name
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '.')
+    {
         return Err(EtlError::InvalidConfigValueError {
             field: field_name.to_string(),
             value: bucket_name.to_string(),
-            reason: "S3 bucket name can only contain lowercase letters, numbers, hyphens, and dots".to_string(),
+            reason: "S3 bucket name can only contain lowercase letters, numbers, hyphens, and dots"
+                .to_string(),
         });
     }
 
@@ -136,11 +140,15 @@ fn validate_aws_region(field_name: &str, region: &str) -> crate::utils::error::R
     validate_non_empty_string(field_name, region)?;
 
     // AWS region format validation
-    if !region.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+    if !region
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
         return Err(EtlError::InvalidConfigValueError {
             field: field_name.to_string(),
             value: region.to_string(),
-            reason: "AWS region can only contain lowercase letters, numbers, and hyphens".to_string(),
+            reason: "AWS region can only contain lowercase letters, numbers, and hyphens"
+                .to_string(),
         });
     }
 
