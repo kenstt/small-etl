@@ -45,7 +45,16 @@ pub struct SourceConfig {
     pub retry_delay_seconds: Option<u64>,
     pub headers: Option<HashMap<String, String>>,
     pub parameters: Option<HashMap<String, String>>,
-    pub data_source: Option<DataSource>, // 數據來源設定
+    pub payload: Option<PayloadConfig>,     // API 請求負載設定
+    pub data_source: Option<DataSource>,    // 數據來源設定
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PayloadConfig {
+    pub body: Option<String>,                                    // JSON 字串或模板
+    pub template_params: Option<HashMap<String, String>>,        // 模板參數映射
+    pub content_type: Option<String>,                            // Content-Type header
+    pub use_previous_data_as_params: Option<bool>,              // 使用前一個 pipeline 的資料作為參數
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

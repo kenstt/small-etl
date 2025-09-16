@@ -121,7 +121,7 @@ impl<S: Storage> SequenceAwarePipeline<S> {
             let endpoint = self.build_parameterized_endpoint(&record.data)?;
             tracing::debug!("📡 {}: API call {}/{}: {}", self.name, index + 1, param_records.len(), endpoint);
 
-            let api_records = self.fetch_single_api_call(&endpoint).await?;
+            let api_records = self.fetch_single_api_call_with_data(&endpoint, Some(&record.data)).await?;
             all_records.extend(api_records);
 
             // 可選：添加延遲避免請求過於頻繁
@@ -132,6 +132,62 @@ impl<S: Storage> SequenceAwarePipeline<S> {
 
         tracing::info!("📡 {}: Total records fetched from parameterized APIs: {}", self.name, all_records.len());
         Ok(all_records)
+    }
+
+    /// 處理 payload 模板，替換參數
+    fn process_payload_template(&self, template: &str, record_data: Option<&HashMap<String, serde_json::Value>>) -> Result<String> {
+        let mut processed = template.to_string();
+
+        // 如果配置了模板參數映射
+        if let Some(payload_config) = &self.config.source.payload {
+            if let Some(template_params) = &payload_config.template_params {
+                for (template_key, data_key) in template_params {
+                    let placeholder = format!("{{{{{}}}}}", template_key);
+                    if processed.contains(&placeholder) {
+                        if let Some(record_data) = record_data {
+                            if let Some(value) = record_data.get(data_key) {
+                                let value_str = match value {
+                                    serde_json::Value::String(s) => s.clone(),
+                                    serde_json::Value::Number(n) => n.to_string(),
+                                    serde_json::Value::Bool(b) => b.to_string(),
+                                    serde_json::Value::Null => "null".to_string(),
+                                    _ => serde_json::to_string(value).unwrap_or_default().trim_matches('"').to_string(),
+                                };
+                                processed = processed.replace(&placeholder, &value_str);
+                                tracing::debug!("📡 {}: Replaced payload template {} with {}", self.name, placeholder, value_str);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 如果啟用了使用前一個 pipeline 資料作為參數
+            if payload_config.use_previous_data_as_params.unwrap_or(false) {
+                if let Some(record_data) = record_data {
+                    for (key, value) in record_data {
+                        let placeholder = format!("{{{{{}}}}}", key);
+                        if processed.contains(&placeholder) {
+                            let value_str = match value {
+                                serde_json::Value::String(s) => s.clone(),
+                                serde_json::Value::Number(n) => n.to_string(),
+                                serde_json::Value::Bool(b) => b.to_string(),
+                                serde_json::Value::Null => "null".to_string(),
+                                _ => serde_json::to_string(value).unwrap_or_default().trim_matches('"').to_string(),
+                            };
+                            processed = processed.replace(&placeholder, &value_str);
+                            tracing::debug!("📡 {}: Replaced payload parameter {} with {}", self.name, placeholder, value_str);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 檢查是否還有未替換的參數
+        if processed.contains("{{") && processed.contains("}}") {
+            tracing::warn!("📡 {}: Unresolved template parameters in payload: {}", self.name, processed);
+        }
+
+        Ok(processed)
     }
 
     /// 構建參數化端點 URL
@@ -145,45 +201,93 @@ impl<S: Storage> SequenceAwarePipeline<S> {
         tracing::debug!("📡 {}: Building endpoint from template: {}", self.name, endpoint);
         tracing::debug!("📡 {}: Available data fields: {:?}", self.name, data.keys().collect::<Vec<_>>());
 
-        // 替換 URL 中的參數佔位符
+        // 替換 URL 中的參數佔位符 (支援 {key} 和 {{key}} 格式)
         for (key, value) in data {
-            let placeholder = format!("{{{}}}", key);
-            if endpoint.contains(&placeholder) {
-                let value_str = match value {
-                    serde_json::Value::String(s) => s.clone(),
-                    serde_json::Value::Number(n) => n.to_string(),
-                    _ => value.to_string().trim_matches('"').to_string(),
-                };
-                endpoint = endpoint.replace(&placeholder, &value_str);
-                tracing::info!("📡 {}: Replaced {} with {}", self.name, placeholder, value_str);
+            let placeholder_single = format!("{{{}}}", key);
+            let placeholder_double = format!("{{{{{}}}}}", key);
+
+            let value_str = match value {
+                serde_json::Value::String(s) => s.clone(),
+                serde_json::Value::Number(n) => n.to_string(),
+                _ => value.to_string().trim_matches('"').to_string(),
+            };
+
+            if endpoint.contains(&placeholder_single) {
+                endpoint = endpoint.replace(&placeholder_single, &value_str);
+                tracing::info!("📡 {}: Replaced {} with {}", self.name, placeholder_single, value_str);
+            } else if endpoint.contains(&placeholder_double) {
+                endpoint = endpoint.replace(&placeholder_double, &value_str);
+                tracing::info!("📡 {}: Replaced {} with {}", self.name, placeholder_double, value_str);
             }
         }
 
         tracing::debug!("📡 {}: Final endpoint: {}", self.name, endpoint);
 
-        // 檢查是否還有未替換的參數
+        // 檢查是否還有未替換的參數 (單括號格式)
         if endpoint.contains("{") && endpoint.contains("}") {
+            // 找出所有未替換的參數
+            let re = regex::Regex::new(r"\{([^}]+)\}").unwrap();
+            let unresolved: Vec<&str> = re.captures_iter(&endpoint)
+                .map(|cap| cap.get(1).unwrap().as_str())
+                .collect();
+
             tracing::error!("📡 {}: Unresolved parameters in endpoint: {}", self.name, endpoint);
-            tracing::error!("📡 {}: Available fields were: {:?}", self.name, data);
+            tracing::error!("📡 {}: Unresolved parameter names: {:?}", self.name, unresolved);
+            tracing::error!("📡 {}: Available fields were: {:?}", self.name, data.keys().collect::<Vec<_>>());
             return Err(crate::utils::error::EtlError::ProcessingError {
-                message: format!("Unresolved parameters in endpoint: {}. Available fields: {:?}", endpoint, data.keys().collect::<Vec<_>>())
+                message: format!("Unresolved parameters in endpoint: {}. Unresolved: {:?}, Available fields: {:?}",
+                    endpoint, unresolved, data.keys().collect::<Vec<_>>())
             });
         }
 
         Ok(endpoint)
     }
 
-    /// 執行單一 API 呼叫
-    async fn fetch_single_api_call(&self, endpoint: &str) -> Result<Vec<Record>> {
+
+    /// 執行單一 API 呼叫，支援資料參數
+    async fn fetch_single_api_call_with_data(&self, endpoint: &str, record_data: Option<&HashMap<String, serde_json::Value>>) -> Result<Vec<Record>> {
         let mut records = Vec::new();
 
+        // 決定 HTTP 方法
+        let method = self.config.source.method.as_deref().unwrap_or("GET").to_uppercase();
+
         // 構建請求
-        let mut request = self.client.get(endpoint);
+        let mut request = match method.as_str() {
+            "GET" => self.client.get(endpoint),
+            "POST" => self.client.post(endpoint),
+            "PUT" => self.client.put(endpoint),
+            "DELETE" => self.client.delete(endpoint),
+            "PATCH" => self.client.patch(endpoint),
+            "HEAD" => self.client.head(endpoint),
+            _ => {
+                tracing::warn!("📡 {}: Unsupported HTTP method '{}', falling back to GET", self.name, method);
+                self.client.get(endpoint)
+            }
+        };
 
         // 添加自定義標頭
         if let Some(headers) = &self.config.source.headers {
             for (key, value) in headers {
                 request = request.header(key, value);
+            }
+        }
+
+        // 處理 payload
+        if let Some(payload_config) = &self.config.source.payload {
+            // 設定 Content-Type
+            if let Some(content_type) = &payload_config.content_type {
+                request = request.header("Content-Type", content_type);
+            } else if method != "GET" && method != "HEAD" {
+                request = request.header("Content-Type", "application/json");
+            }
+
+            // 處理請求體
+            if let Some(body_template) = &payload_config.body {
+                let processed_body = self.process_payload_template(body_template, record_data)?;
+                if !processed_body.is_empty() {
+                    tracing::debug!("📡 {}: Request body: {}", self.name, processed_body);
+                    request = request.body(processed_body);
+                }
             }
         }
 
@@ -198,6 +302,8 @@ impl<S: Storage> SequenceAwarePipeline<S> {
         if let Some(timeout) = self.config.source.timeout_seconds {
             request = request.timeout(std::time::Duration::from_secs(timeout));
         }
+
+        tracing::debug!("📡 {}: Making {} request to: {}", self.name, method, endpoint);
 
         // 執行請求
         let response = request.send().await?;
@@ -260,107 +366,15 @@ impl<S: Storage> SequenceAwarePipeline<S> {
 
     /// 從 API 獲取數據
     async fn fetch_api_data(&self) -> Result<Vec<Record>> {
-        let mut records = Vec::new();
-
-        // 構建請求
         let endpoint = self.config.source.endpoint.as_ref()
             .ok_or_else(|| EtlError::ConfigValidationError {
                 field: "source.endpoint".to_string(),
                 message: "Endpoint is required for API calls".to_string(),
             })?;
-        let mut request = self.client.get(endpoint);
 
-        // 添加自定義標頭
-        if let Some(headers) = &self.config.source.headers {
-            for (key, value) in headers {
-                request = request.header(key, value);
-            }
-        }
-
-        // 添加查詢參數
-        if let Some(params) = &self.config.source.parameters {
-            for (key, value) in params {
-                request = request.query(&[(key, value)]);
-            }
-        }
-
-        // 設定超時
-        if let Some(timeout) = self.config.source.timeout_seconds {
-            request = request.timeout(std::time::Duration::from_secs(timeout));
-        }
-
-        tracing::debug!("📡 {}: Making API request to: {}", self.name, endpoint);
-
-        // 執行請求
-        let response = request.send().await?;
-        tracing::debug!("📡 {}: API response status: {}", self.name, response.status());
-
-        if response.status().is_success() {
-            let json_data: serde_json::Value = response.json().await?;
-
-            // 處理 API 回應
-            if let serde_json::Value::Array(items) = json_data {
-                let max_records = self.config.extract.max_records.unwrap_or(items.len());
-
-                for item in items.into_iter().take(max_records) {
-                    if let serde_json::Value::Object(obj) = item {
-                        let mut data = HashMap::new();
-
-                        // 應用字段映射
-                        if let Some(field_mapping) = &self.config.extract.field_mapping {
-                            for (original_key, value) in obj {
-                                let mapped_key = field_mapping
-                                    .get(&original_key)
-                                    .unwrap_or(&original_key);
-                                data.insert(mapped_key.clone(), value);
-                            }
-                        } else {
-                            // 沒有映射就直接使用原始字段
-                            for (key, value) in obj {
-                                data.insert(key, value);
-                            }
-                        }
-
-                        records.push(Record { data });
-                    }
-                }
-            } else if let serde_json::Value::Object(obj) = json_data {
-                // 單一物件回應 - 應用字段映射
-                let mut data = HashMap::new();
-
-                if let Some(field_mapping) = &self.config.extract.field_mapping {
-                    for (original_key, value) in obj {
-                        let mapped_key = field_mapping
-                            .get(&original_key)
-                            .unwrap_or(&original_key);
-                        data.insert(mapped_key.clone(), value);
-                    }
-                } else {
-                    // 沒有映射就直接使用原始字段
-                    for (key, value) in obj {
-                        data.insert(key, value);
-                    }
-                }
-
-                records.push(Record { data });
-            } else {
-                // 其他類型的回應
-                let mut data = HashMap::new();
-                data.insert("response".to_string(), json_data);
-                records.push(Record { data });
-            }
-        } else {
-            // API 回應失敗
-            let error_msg = format!("API request failed with status: {}", response.status());
-            tracing::error!("❌ {}: {}", self.name, error_msg);
-            return Err(crate::utils::error::EtlError::ProcessingError {
-                message: error_msg
-            });
-        }
-
-        tracing::info!("📡 {}: Fetched {} records from API", self.name, records.len());
-        Ok(records)
+        self.fetch_single_api_call_with_data(endpoint, None).await
     }
+
 
     /// 應用數據處理操作
     fn apply_data_processing(&self, mut records: Vec<Record>) -> Vec<Record> {

@@ -1,0 +1,83 @@
+[sequence]
+name = "api-method-test"
+description = "測試 HTTP 方法和 payload 功能"
+version = "1.0.0"
+execution_order = ["get_users", "create_user", "update_user_with_data"]
+
+[[pipelines]]
+name = "get_users"
+description = "獲取用戶列表"
+enabled = true
+
+[pipelines.source]
+type = "api"
+endpoint = "https://jsonplaceholder.typicode.com/users"
+method = "GET"
+timeout_seconds = 30
+
+[pipelines.extract]
+max_records = 5
+
+[pipelines.transform]
+
+[pipelines.load]
+output_path = "./test-output"
+output_formats = ["json"]
+
+[[pipelines]]
+name = "create_user"
+description = "創建新用戶"
+enabled = true
+
+[pipelines.source]
+type = "api"
+endpoint = "https://jsonplaceholder.typicode.com/users"
+method = "POST"
+timeout_seconds = 30
+
+[pipelines.source.payload]
+body = '''{"name": "Test User", "username": "testuser", "email": "test@example.com"}'''
+content_type = "application/json"
+
+[pipelines.extract]
+
+[pipelines.transform]
+
+[pipelines.load]
+output_path = "./test-output"
+output_formats = ["json"]
+
+[[pipelines]]
+name = "update_user_with_data"
+description = "使用前一個 pipeline 的資料更新用戶"
+enabled = true
+
+[pipelines.source]
+type = "api"
+endpoint = "https://jsonplaceholder.typicode.com/users/{id}"
+method = "PUT"
+timeout_seconds = 30
+
+[pipelines.source.data_source]
+use_previous_output = true
+from_pipeline = "get_users"
+
+[pipelines.source.payload]
+body = '''{"id": {{id}}, "name": "{{name}} (Updated)", "username": "{{username}}_updated", "email": "{{email}}"}'''
+content_type = "application/json"
+use_previous_data_as_params = true
+
+[pipelines.extract]
+
+[pipelines.transform]
+
+[pipelines.load]
+output_path = "./test-output"
+output_formats = ["json"]
+
+[global]
+working_directory = "./test-output"
+
+[monitoring]
+enabled = true
+log_level = "info"

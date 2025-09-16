@@ -41,3 +41,7 @@ lambda = ["lambda_runtime", "aws-sdk-s3", "aws-config"]
 name = "lambda"
 path = "src/lambda.rs"
 required-features = ["lambda"]
+
+[[bin]]
+name = "test_api_methods"
+path = "src/bin/test_api_methods.rs"
