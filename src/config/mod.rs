@@ -4,6 +4,7 @@ pub mod cli;
 pub mod lambda;
 
 pub mod toml_config;
+pub mod sequence_config;
 
 #[cfg(feature = "cli")]
 use crate::core::ConfigProvider;

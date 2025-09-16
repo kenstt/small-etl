@@ -1,6 +1,8 @@
 pub mod etl;
 pub mod mvp_pipeline;
 pub mod pipeline;
+pub mod pipeline_sequence;
+pub mod contextual_pipeline;
 
 use crate::utils::error::Result;
 use serde::{Deserialize, Serialize};

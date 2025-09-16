@@ -1,0 +1,104 @@
+# ETL Pipeline Configuration File
+# 這個 TOML 檔案定義了完整的 ETL 流程配置
+
+[pipeline]
+name = "sample-etl-pipeline"
+description = "Sample ETL pipeline for data processing"
+version = "1.0.0"
+
+[source]
+# API 數據源配置
+type = "api"
+endpoint = "https://jsonplaceholder.typicode.com/posts"
+method = "GET"
+timeout_seconds = 30
+retry_attempts = 3
+retry_delay_seconds = 5
+
+# HTTP 請求頭
+[source.headers]
+"User-Agent" = "samll-etl/1.0.0"
+"Accept" = "application/json"
+
+# 請求參數
+[source.parameters]
+# _limit = 10  # 限制返回數量 (取消註解以啟用)
+# _start = 0   # 起始偏移量
+
+[extract]
+# 第一筆 API 擷取設定 (MVP)
+first_record_only = true  # MVP: 只處理第一筆記錄
+concurrent_requests = 1   # MVP: 降低並發數
+max_records = 1          # MVP: 最多處理 1 筆記錄
+
+# 數據字段映射
+[extract.field_mapping]
+id = "post_id"
+title = "post_title"
+body = "post_content"
+userId = "author_id"
+
+# 數據過濾條件
+[extract.filters]
+# 只處理特定用戶的文章
+# user_id = [1, 2, 3]
+
+[transform]
+# 數據轉換配置
+[transform.operations]
+# 文本清理
+clean_text = true
+trim_whitespace = true
+remove_html_tags = false
+
+# 數據驗證
+[transform.validation]
+required_fields = ["post_id", "post_title", "post_content"]
+max_title_length = 200
+max_content_length = 2000
+
+# 中繼數據條件 (例如：標題長度 > 50)
+[transform.intermediate]
+title_length_threshold = 50
+
+[load]
+# 輸出配置
+output_path = "./output"
+output_formats = ["csv", "tsv", "json"]
+
+# ZIP 壓縮設定
+[load.compression]
+enabled = true
+filename = "etl_output.zip"
+include_intermediate = true
+
+# 檔案命名配置
+[load.filenames]
+csv = "processed_data.csv"
+tsv = "processed_data.tsv"
+json = "intermediate_data.json"
+
+[monitoring]
+# 監控和日誌配置
+enabled = true
+log_level = "info"  # debug, info, warn, error
+system_stats = true
+performance_metrics = true
+
+# 錯誤處理
+[error_handling]
+on_api_failure = "use_sample_data"  # "fail", "use_sample_data", "retry"
+on_transform_error = "skip_record"  # "fail", "skip_record", "use_default"
+on_load_error = "fail"              # "fail", "retry"
+
+# 性能調優
+[performance]
+request_timeout = 30
+memory_limit_mb = 512
+disk_cache_enabled = false
+
+# 環境變數映射 (可選)
+[environment]
+api_key = "${API_KEY}"
+output_path = "${OUTPUT_PATH}"
+log_level = "${LOG_LEVEL}"

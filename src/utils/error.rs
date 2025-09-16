@@ -82,6 +82,10 @@ pub enum EtlError {
     // Legacy validation error (keeping for backward compatibility)
     #[error("Validation error: {message}")]
     ValidationError { message: String },
+
+    // Pipeline execution errors
+    #[error("Pipeline execution failed: {0}")]
+    PipelineExecution(String),
 }
 
 pub type Result<T> = std::result::Result<T, EtlError>;
@@ -129,6 +133,7 @@ impl EtlError {
             // Critical severity - system errors
             EtlError::ResourceExhaustedError { .. } => ErrorSeverity::Critical,
             EtlError::IoError(_) => ErrorSeverity::Critical,
+            EtlError::PipelineExecution(_) => ErrorSeverity::High,
 
             // Default mappings
             _ => ErrorSeverity::Medium,
@@ -164,6 +169,7 @@ impl EtlError {
             EtlError::ResourceExhaustedError { .. } => ErrorCategory::System,
 
             EtlError::ValidationError { .. } => ErrorCategory::DataProcessing,
+            EtlError::PipelineExecution(_) => ErrorCategory::DataProcessing,
         }
     }
 
@@ -193,6 +199,7 @@ impl EtlError {
             EtlError::ResourceExhaustedError { .. } => "Increase system resources or reduce load",
             EtlError::InsufficientDataError { .. } => "Check data source availability",
             EtlError::DataQualityError { .. } => "Review data quality rules and input data",
+            EtlError::PipelineExecution(_) => "Check pipeline configuration and data dependencies",
             _ => "Check logs for detailed error information",
         }
     }
@@ -211,6 +218,7 @@ impl EtlError {
             }
             EtlError::DataValidationError { .. } => "數據驗證失敗，請檢查輸入數據格式".to_string(),
             EtlError::AuthenticationError { .. } => "認證失敗，請檢查API憑證".to_string(),
+            EtlError::PipelineExecution(msg) => format!("Pipeline執行失敗: {}", msg),
             _ => "處理過程中發生錯誤".to_string(),
         }
     }

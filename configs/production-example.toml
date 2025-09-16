@@ -1,0 +1,82 @@
+# 生產環境範例配置
+[pipeline]
+name = "production-etl"
+description = "Production ETL pipeline with full features"
+version = "2.0.0"
+
+[source]
+type = "api"
+endpoint = "https://api.example.com/data"
+method = "GET"
+timeout_seconds = 30
+retry_attempts = 3
+retry_delay_seconds = 5
+
+[source.headers]
+"Authorization" = "${API_TOKEN}"
+"User-Agent" = "samll-etl/2.0.0"
+"Accept" = "application/json"
+
+[source.parameters]
+limit = "100"
+format = "json"
+
+[extract]
+first_record_only = false  # 正常模式
+concurrent_requests = 10
+max_records = 1000
+
+[extract.field_mapping]
+id = "record_id"
+name = "record_name"
+description = "record_desc"
+created_at = "timestamp"
+
+[transform]
+
+[transform.operations]
+clean_text = true
+trim_whitespace = true
+remove_html_tags = true
+
+[transform.validation]
+required_fields = ["record_id", "record_name"]
+max_title_length = 200
+max_content_length = 5000
+
+[transform.intermediate]
+title_length_threshold = 100
+
+[load]
+output_path = "./production-output"
+output_formats = ["csv", "tsv", "json"]
+
+[load.compression]
+enabled = true
+filename = "production_data.zip"
+include_intermediate = true
+
+[load.filenames]
+csv = "processed_data.csv"
+tsv = "processed_data.tsv"
+json = "full_data.json"
+
+[monitoring]
+enabled = true
+log_level = "info"
+system_stats = true
+performance_metrics = true
+
+[error_handling]
+on_api_failure = "retry"
+on_transform_error = "skip_record"
+on_load_error = "fail"
+
+[performance]
+request_timeout = 30
+memory_limit_mb = 1024
+disk_cache_enabled = true
+
+[environment]
+api_token = "${API_TOKEN}"
+output_path = "${OUTPUT_PATH}"

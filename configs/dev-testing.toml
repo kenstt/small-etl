@@ -1,0 +1,40 @@
+# 開發測試配置
+[pipeline]
+name = "dev-testing"
+description = "Development and testing configuration"
+version = "1.0.0-dev"
+
+[source]
+type = "api"
+endpoint = "https://httpbin.org/json"  # 測試用端點
+timeout_seconds = 5
+
+[extract]
+first_record_only = false
+max_records = 5
+concurrent_requests = 2
+
+# 簡單字段映射測試
+[extract.field_mapping]
+slideshow = "test_data"
+
+[transform]
+
+[transform.operations]
+clean_text = false
+trim_whitespace = true
+
+[transform.validation]
+required_fields = ["test_data"]
+
+[load]
+output_path = "./test-output"
+output_formats = ["csv", "json"]
+
+[load.compression]
+enabled = true
+filename = "test_output.zip"
+
+[monitoring]
+enabled = true
+log_level = "debug"

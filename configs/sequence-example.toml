@@ -1,0 +1,183 @@
+# Pipeline 序列執行範例配置
+[sequence]
+name = "data-processing-sequence"
+description = "Multi-stage data processing pipeline sequence"
+version = "1.0.0"
+execution_order = ["data-extraction", "data-enrichment", "data-aggregation", "final-export"]
+
+[global]
+working_directory = "./sequence-output"
+timeout_minutes = 30
+
+[global.shared_variables]
+api_base_url = "https://jsonplaceholder.typicode.com"
+output_format = "json"
+
+[monitoring]
+enabled = true
+log_level = "info"
+export_metrics = true
+metrics_file = "sequence_metrics.json"
+
+[error_handling]
+on_pipeline_failure = "stop"
+retry_attempts = 2
+retry_delay_seconds = 10
+
+# Pipeline 1: 數據提取
+[[pipelines]]
+name = "data-extraction"
+description = "Extract raw data from API"
+enabled = true
+
+[pipelines.source]
+type = "api"
+endpoint = "https://jsonplaceholder.typicode.com/posts"
+timeout_seconds = 30
+
+[pipelines.source.headers]
+"User-Agent" = "ETL-Sequence/1.0"
+
+[pipelines.extract]
+max_records = 10
+concurrent_requests = 2
+
+[pipelines.extract.field_mapping]
+id = "post_id"
+title = "post_title"
+body = "post_content"
+userId = "author_id"
+
+[pipelines.extract.data_processing]
+deduplicate = true
+deduplicate_fields = ["post_id"]
+sort_by = "post_id"
+sort_order = "asc"
+
+[pipelines.transform]
+
+[pipelines.transform.operations]
+clean_text = true
+trim_whitespace = true
+normalize_fields = ["post_title"]
+
+[pipelines.transform.validation]
+required_fields = ["post_id", "post_title"]
+min_records = 1
+max_records = 50
+
+[pipelines.load]
+output_path = "./sequence-output"
+output_formats = ["json", "csv"]
+filename_pattern = "{pipeline_name}_{timestamp}"
+
+# Pipeline 2: 數據豐富化
+[[pipelines]]
+name = "data-enrichment"
+description = "Enrich data with additional information"
+enabled = true
+dependencies = ["data-extraction"]
+
+[pipelines.source]
+type = "api"
+endpoint = "https://jsonplaceholder.typicode.com/users"
+
+[pipelines.source.data_source]
+use_previous_output = true
+merge_with_api = true
+
+[pipelines.extract]
+max_records = 50
+
+[pipelines.extract.field_mapping]
+id = "user_id"
+name = "user_name"
+email = "user_email"
+
+[pipelines.transform]
+
+[pipelines.transform.data_enrichment]
+lookup_data = { "author_id" = "user_lookup" }
+computed_fields = { "enrichment_timestamp" = "record_index", "source_pipeline" = "pipeline_name" }
+
+[pipelines.transform.intermediate]
+export_to_shared = true
+shared_key = "enriched_data_count"
+
+[pipelines.load]
+output_path = "./sequence-output"
+output_formats = ["json"]
+filename_pattern = "{pipeline_name}_{execution_id}"
+
+# Pipeline 3: 數據聚合
+[[pipelines]]
+name = "data-aggregation"
+description = "Aggregate enriched data"
+enabled = true
+dependencies = ["data-enrichment"]
+
+[pipelines.source]
+type = "previous"  # 特殊類型，表示只使用前一個 Pipeline 的輸出
+
+[pipelines.source.data_source]
+use_previous_output = true
+from_pipeline = "data-enrichment"
+
+[pipelines.extract]
+
+[pipelines.transform]
+
+[pipelines.transform.operations]
+clean_text = false
+
+[pipelines.transform.data_enrichment]
+computed_fields = { "aggregation_level" = "pipeline_name", "total_records" = "record_index" }
+
+[pipelines.conditions]
+when_previous_succeeded = true
+skip_if_empty = true
+
+[pipelines.conditions.when_records_count]
+min = 1
+from_pipeline = "data-enrichment"
+
+[pipelines.load]
+output_path = "./sequence-output"
+output_formats = ["json", "csv"]
+append_to_sequence = true
+
+# Pipeline 4: 最終匯出
+[[pipelines]]
+name = "final-export"
+description = "Final export with all data combined"
+enabled = true
+dependencies = ["data-aggregation"]
+
+[pipelines.source]
+type = "combined"  # 特殊類型，合併所有前面的結果
+
+[pipelines.source.data_source]
+use_previous_output = true
+
+[pipelines.extract]
+
+[pipelines.transform]
+
+[pipelines.transform.operations]
+clean_text = true
+
+[pipelines.transform.data_enrichment]
+computed_fields = { "sequence_completion" = "execution_id", "final_timestamp" = "pipeline_name" }
+
+[pipelines.transform.validation]
+min_records = 1
+
+[pipelines.load]
+output_path = "./sequence-output"
+output_formats = ["json", "csv", "tsv"]
+filename_pattern = "final_export_{execution_id}"
+
+[pipelines.load.compression]
+enabled = true
+filename = "complete_sequence_output.zip"
+include_metadata = true

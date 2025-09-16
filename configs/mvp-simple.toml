@@ -1,0 +1,25 @@
+# MVP 簡化配置 - 只處理第一筆記錄
+[pipeline]
+name = "mvp-simple"
+description = "MVP mode - process only first record"
+version = "1.0.0"
+
+[source]
+type = "api"
+endpoint = "https://jsonplaceholder.typicode.com/posts"
+timeout_seconds = 10
+
+[extract]
+first_record_only = true  # MVP 核心設定
+max_records = 1
+concurrent_requests = 1
+
+[transform]
+
+[load]
+output_path = "./output"
+output_formats = ["csv", "json"]
+
+[load.compression]
+enabled = true
+filename = "mvp_output.zip"
