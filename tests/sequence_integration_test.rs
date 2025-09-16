@@ -149,8 +149,10 @@ async fn test_pipeline_sequence_execution() -> Result<()> {
     // 修改配置中的端點URL為mock server
     let mut modified_config = config.clone();
     for pipeline in &mut modified_config.pipelines {
-        if pipeline.source.endpoint.contains("localhost:8080") {
-            pipeline.source.endpoint = pipeline.source.endpoint.replace("localhost:8080", &server.address().to_string());
+        if let Some(endpoint) = &mut pipeline.source.endpoint {
+            if endpoint.contains("localhost:8080") {
+                *endpoint = endpoint.replace("localhost:8080", &server.address().to_string());
+            }
         }
     }
 
@@ -204,8 +206,10 @@ async fn test_pipeline_sequence_with_dependency_failure() -> Result<()> {
 
     let mut modified_config = config.clone();
     for pipeline in &mut modified_config.pipelines {
-        if pipeline.source.endpoint.contains("localhost:8080") {
-            pipeline.source.endpoint = pipeline.source.endpoint.replace("localhost:8080", &server.address().to_string());
+        if let Some(endpoint) = &mut pipeline.source.endpoint {
+            if endpoint.contains("localhost:8080") {
+                *endpoint = endpoint.replace("localhost:8080", &server.address().to_string());
+            }
         }
     }
 
@@ -344,8 +348,10 @@ output_formats = ["json"]
 
     let mut modified_config = config.clone();
     for pipeline in &mut modified_config.pipelines {
-        if pipeline.source.endpoint.contains("localhost:8080") {
-            pipeline.source.endpoint = pipeline.source.endpoint.replace("localhost:8080", &server.address().to_string());
+        if let Some(endpoint) = &mut pipeline.source.endpoint {
+            if endpoint.contains("localhost:8080") {
+                *endpoint = endpoint.replace("localhost:8080", &server.address().to_string());
+            }
         }
     }
 
@@ -399,8 +405,10 @@ async fn test_pipeline_sequence_metrics() -> Result<()> {
 
     let mut modified_config = config.clone();
     for pipeline in &mut modified_config.pipelines {
-        if pipeline.source.endpoint.contains("localhost:8080") {
-            pipeline.source.endpoint = pipeline.source.endpoint.replace("localhost:8080", &server.address().to_string());
+        if let Some(endpoint) = &mut pipeline.source.endpoint {
+            if endpoint.contains("localhost:8080") {
+                *endpoint = endpoint.replace("localhost:8080", &server.address().to_string());
+            }
         }
     }
 

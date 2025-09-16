@@ -30,7 +30,7 @@ impl<S: Storage> Pipeline for MvpPipeline<S> {
 
         tracing::info!(
             "🚀 Starting MVP extraction from: {}",
-            self.config.source.endpoint
+            &self.config.source.endpoint
         );
 
         // 檢查是否啟用 MVP 模式
@@ -60,7 +60,7 @@ impl<S: Storage> Pipeline for MvpPipeline<S> {
             request = request.timeout(std::time::Duration::from_secs(timeout));
         }
 
-        tracing::debug!("Making API request to: {}", self.config.source.endpoint);
+        tracing::debug!("Making API request to: {}", &self.config.source.endpoint);
 
         // 執行請求
         let response = request.send().await?;

@@ -3,7 +3,7 @@ use crate::core::{
     pipeline_sequence::{ContextualPipeline, PipelineContext},
     Record, Storage, TransformResult,
 };
-use crate::utils::error::Result;
+use crate::utils::error::{EtlError, Result};
 use reqwest::Client;
 use std::collections::HashMap;
 use std::io::Write;
@@ -59,14 +59,27 @@ impl<S: Storage> SequenceAwarePipeline<S> {
 
                 // 如果設定為合併，還需要獲取 API 數據
                 // 但對於參數化 API（含 {param}），即使 merge_with_api = false 也需要執行 API 呼叫
-                if !data_source.merge_with_api.unwrap_or(false) && !self.config.source.endpoint.contains("{") {
+                let endpoint = self.config.source.endpoint.as_deref().unwrap_or("");
+                if !data_source.merge_with_api.unwrap_or(false) && !endpoint.contains("{") {
                     return Ok(records);
                 }
             }
         }
 
         // 獲取 API 數據 - 檢查是否需要參數化呼叫
-        let api_records = if self.config.source.endpoint.contains("{") {
+        let endpoint = self.config.source.endpoint.as_deref().unwrap_or("");
+
+        // 對於 "previous" 和 "combined" 類型，不進行 API 呼叫
+        if self.config.source.r#type == "previous" || self.config.source.r#type == "combined" {
+            return Ok(records);
+        }
+
+        // 如果沒有端點，也不進行 API 呼叫
+        if endpoint.is_empty() {
+            return Ok(records);
+        }
+
+        let api_records = if endpoint.contains("{") {
             // 參數化 API 呼叫 - 替換前一個 pipeline 的數據
             return self.fetch_parameterized_api(context).await;
         } else {
@@ -123,7 +136,11 @@ impl<S: Storage> SequenceAwarePipeline<S> {
 
     /// 構建參數化端點 URL
     fn build_parameterized_endpoint(&self, data: &HashMap<String, serde_json::Value>) -> Result<String> {
-        let mut endpoint = self.config.source.endpoint.clone();
+        let mut endpoint = self.config.source.endpoint.as_ref()
+            .ok_or_else(|| EtlError::ConfigValidationError {
+                field: "source.endpoint".to_string(),
+                message: "Endpoint is required for parameterized API calls".to_string(),
+            })?.clone();
 
         tracing::debug!("📡 {}: Building endpoint from template: {}", self.name, endpoint);
         tracing::debug!("📡 {}: Available data fields: {:?}", self.name, data.keys().collect::<Vec<_>>());
@@ -246,7 +263,12 @@ impl<S: Storage> SequenceAwarePipeline<S> {
         let mut records = Vec::new();
 
         // 構建請求
-        let mut request = self.client.get(&self.config.source.endpoint);
+        let endpoint = self.config.source.endpoint.as_ref()
+            .ok_or_else(|| EtlError::ConfigValidationError {
+                field: "source.endpoint".to_string(),
+                message: "Endpoint is required for API calls".to_string(),
+            })?;
+        let mut request = self.client.get(endpoint);
 
         // 添加自定義標頭
         if let Some(headers) = &self.config.source.headers {
@@ -267,7 +289,7 @@ impl<S: Storage> SequenceAwarePipeline<S> {
             request = request.timeout(std::time::Duration::from_secs(timeout));
         }
 
-        tracing::debug!("📡 {}: Making API request to: {}", self.name, self.config.source.endpoint);
+        tracing::debug!("📡 {}: Making API request to: {}", self.name, endpoint);
 
         // 執行請求
         let response = request.send().await?;

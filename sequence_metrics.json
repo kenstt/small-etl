@@ -1,0 +1,41 @@
+{
+  "pipelines": [
+    {
+      "duration_ms": 85,
+      "name": "data-extraction",
+      "output_path": "./sequence-output/data-extraction_20250916_091124",
+      "records_count": 10
+    },
+    {
+      "duration_ms": 64,
+      "name": "data-enrichment",
+      "output_path": "./sequence-output/data-enrichment_seq_20250916_091124",
+      "records_count": 20
+    },
+    {
+      "duration_ms": 5,
+      "name": "data-aggregation",
+      "output_path": "./sequence-output/data-aggregation_output.zip",
+      "records_count": 20
+    },
+    {
+      "duration_ms": 8,
+      "name": "final-export",
+      "output_path": "./sequence-output/final_export_seq_20250916_091124",
+      "records_count": 20
+    }
+  ],
+  "summary": {
+    "executed_pipelines": [
+      "data-extraction",
+      "data-enrichment",
+      "data-aggregation",
+      "final-export"
+    ],
+    "total_duration_ms": 163,
+    "total_pipelines": 4,
+    "total_records": 70
+  },
+  "execution_id": "seq_20250916_091124",
+  "timestamp": "2025-09-16T09:11:24.909302100+00:00"
+}

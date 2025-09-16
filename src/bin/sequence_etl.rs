@@ -238,7 +238,7 @@ async fn perform_dry_run(
 
     for (index, pipeline) in pipelines_to_execute.iter().enumerate() {
         println!("📦 Pipeline {}: {}", index + 1, pipeline.name);
-        println!("  📡 Source: {}", pipeline.source.endpoint);
+        println!("  📡 Source: {}", pipeline.source.endpoint.as_deref().unwrap_or("Previous pipeline output"));
 
         if let Some(data_source) = &pipeline.source.data_source {
             if data_source.use_previous_output.unwrap_or(false) {

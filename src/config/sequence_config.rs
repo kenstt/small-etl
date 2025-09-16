@@ -38,7 +38,7 @@ pub struct PipelineDefinition {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceConfig {
     pub r#type: String,
-    pub endpoint: String,
+    pub endpoint: Option<String>,
     pub method: Option<String>,
     pub timeout_seconds: Option<u64>,
     pub retry_attempts: Option<u32>,
@@ -221,8 +221,17 @@ impl SequenceConfig {
     }
 
     fn validate_pipeline(&self, pipeline: &PipelineDefinition) -> Result<()> {
-        // 驗證 API 端點
-        crate::utils::validation::validate_url("source.endpoint", &pipeline.source.endpoint)?;
+        // 驗證 API 端點 (只有 api 類型需要端點)
+        if pipeline.source.r#type == "api" {
+            if let Some(endpoint) = &pipeline.source.endpoint {
+                crate::utils::validation::validate_url("source.endpoint", endpoint)?;
+            } else {
+                return Err(EtlError::ConfigValidationError {
+                    field: "source.endpoint".to_string(),
+                    message: "API source type requires an endpoint".to_string(),
+                });
+            }
+        }
 
         // 驗證輸出路徑
         crate::utils::validation::validate_path("load.output_path", &pipeline.load.output_path)?;
@@ -317,7 +326,7 @@ impl SequenceConfig {
 
 impl ConfigProvider for PipelineDefinition {
     fn api_endpoint(&self) -> &str {
-        &self.source.endpoint
+        self.source.endpoint.as_deref().unwrap_or("http://localhost")
     }
 
     fn output_path(&self) -> &str {

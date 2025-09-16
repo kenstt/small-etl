@@ -125,11 +125,13 @@ output_formats = ["json"]
     // 修改配置中的端點 URL 為 mock server
     let mut modified_config = config.clone();
     for pipeline in &mut modified_config.pipelines {
-        if pipeline.source.endpoint.contains("localhost:8080") {
-            pipeline.source.endpoint = pipeline.source.endpoint.replace(
-                "localhost:8080",
-                &server.address().to_string()
-            );
+        if let Some(endpoint) = &mut pipeline.source.endpoint {
+            if endpoint.contains("localhost:8080") {
+                *endpoint = endpoint.replace(
+                    "localhost:8080",
+                    &server.address().to_string()
+                );
+            }
         }
     }
 
@@ -261,11 +263,13 @@ output_formats = ["json"]
 
     let mut modified_config = config.clone();
     for pipeline in &mut modified_config.pipelines {
-        if pipeline.source.endpoint.contains("localhost:8080") {
-            pipeline.source.endpoint = pipeline.source.endpoint.replace(
-                "localhost:8080",
-                &server.address().to_string()
-            );
+        if let Some(endpoint) = &mut pipeline.source.endpoint {
+            if endpoint.contains("localhost:8080") {
+                *endpoint = endpoint.replace(
+                    "localhost:8080",
+                    &server.address().to_string()
+                );
+            }
         }
     }
 
