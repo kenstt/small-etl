@@ -95,6 +95,8 @@ pub struct TransformOperations {
     pub trim_whitespace: Option<bool>,
     pub remove_html_tags: Option<bool>,
     pub normalize_fields: Option<Vec<String>>,
+    pub keep_only_fields: Option<Vec<String>>, // 只保留指定的欄位，移除其他所有欄位
+    pub exclude_fields: Option<Vec<String>>,   // 排除指定的欄位，保留其他欄位
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

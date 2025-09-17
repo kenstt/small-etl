@@ -733,6 +733,57 @@ impl<S: Storage> ContextualPipeline for SequenceAwarePipeline<S> {
                         }
                     }
                 }
+
+                // 欄位過濾：只保留指定欄位
+                if let Some(keep_only_fields) = &operations.keep_only_fields {
+                    let mut filtered_data = HashMap::new();
+                    for field in keep_only_fields {
+                        if let Some(value) = record.data.get(field) {
+                            filtered_data.insert(field.clone(), value.clone());
+                        } else {
+                            tracing::debug!(
+                                "🔄 {}: Field '{}' specified in keep_only_fields not found",
+                                self.name,
+                                field
+                            );
+                        }
+                    }
+
+                    let original_count = record.data.len();
+                    record.data = filtered_data;
+                    tracing::debug!(
+                        "🔄 {}: Filtered fields {} -> {} (keeping only: {:?})",
+                        self.name,
+                        original_count,
+                        record.data.len(),
+                        keep_only_fields
+                    );
+                }
+                // 欄位過濾：排除指定欄位
+                else if let Some(exclude_fields) = &operations.exclude_fields {
+                    for field in exclude_fields {
+                        if record.data.remove(field).is_some() {
+                            tracing::debug!(
+                                "🔄 {}: Excluded field '{}'",
+                                self.name,
+                                field
+                            );
+                        } else {
+                            tracing::debug!(
+                                "🔄 {}: Field '{}' specified in exclude_fields not found",
+                                self.name,
+                                field
+                            );
+                        }
+                    }
+
+                    tracing::debug!(
+                        "🔄 {}: Excluded {} fields, {} fields remaining",
+                        self.name,
+                        exclude_fields.len(),
+                        record.data.len()
+                    );
+                }
             }
 
             // 數據豐富化
