@@ -2,8 +2,7 @@ use anyhow::Result;
 use httpmock::prelude::*;
 use samll_etl::config::sequence_config::SequenceConfig;
 use samll_etl::core::{
-    contextual_pipeline::SequenceAwarePipeline,
-    pipeline_sequence::PipelineSequence,
+    contextual_pipeline::SequenceAwarePipeline, pipeline_sequence::PipelineSequence,
 };
 use samll_etl::LocalStorage;
 use tempfile::TempDir;
@@ -94,11 +93,8 @@ output_formats = ["json"]
 
     for pipeline_def in &modified_config.pipelines {
         let storage = LocalStorage::new(pipeline_def.load.output_path.clone());
-        let contextual_pipeline = SequenceAwarePipeline::new(
-            pipeline_def.name.clone(),
-            storage,
-            pipeline_def.clone(),
-        );
+        let contextual_pipeline =
+            SequenceAwarePipeline::new(pipeline_def.name.clone(), storage, pipeline_def.clone());
         sequence.add_pipeline(Box::new(contextual_pipeline));
     }
 
@@ -111,13 +107,28 @@ output_formats = ["json"]
     assert_eq!(results[0].records.len(), 1);
 
     let record = &results[0].records[0];
-    println!("🔍 Record keys: {:?}", record.data.keys().collect::<Vec<_>>());
+    println!(
+        "🔍 Record keys: {:?}",
+        record.data.keys().collect::<Vec<_>>()
+    );
 
     // 驗證陣列索引映射結果
-    assert_eq!(record.data.get("team_name").unwrap(), &serde_json::json!("Engineering Team"));
-    assert_eq!(record.data.get("team_lead").unwrap(), &serde_json::json!("Alice Johnson"));
-    assert_eq!(record.data.get("second_member_email").unwrap(), &serde_json::json!("bob@company.com"));
-    assert_eq!(record.data.get("newest_member").unwrap(), &serde_json::json!("Charlie Brown"));
+    assert_eq!(
+        record.data.get("team_name").unwrap(),
+        &serde_json::json!("Engineering Team")
+    );
+    assert_eq!(
+        record.data.get("team_lead").unwrap(),
+        &serde_json::json!("Alice Johnson")
+    );
+    assert_eq!(
+        record.data.get("second_member_email").unwrap(),
+        &serde_json::json!("bob@company.com")
+    );
+    assert_eq!(
+        record.data.get("newest_member").unwrap(),
+        &serde_json::json!("Charlie Brown")
+    );
 
     api_mock.assert();
     println!("✅ Array indexing test passed!");
@@ -219,11 +230,8 @@ output_formats = ["json"]
 
     for pipeline_def in &modified_config.pipelines {
         let storage = LocalStorage::new(pipeline_def.load.output_path.clone());
-        let contextual_pipeline = SequenceAwarePipeline::new(
-            pipeline_def.name.clone(),
-            storage,
-            pipeline_def.clone(),
-        );
+        let contextual_pipeline =
+            SequenceAwarePipeline::new(pipeline_def.name.clone(), storage, pipeline_def.clone());
         sequence.add_pipeline(Box::new(contextual_pipeline));
     }
 
@@ -234,10 +242,16 @@ output_formats = ["json"]
     assert_eq!(results[0].records.len(), 1);
 
     let record = &results[0].records[0];
-    println!("🔍 Record keys: {:?}", record.data.keys().collect::<Vec<_>>());
+    println!(
+        "🔍 Record keys: {:?}",
+        record.data.keys().collect::<Vec<_>>()
+    );
 
     // 驗證 flat mapping 結果
-    assert_eq!(record.data.get("store_name").unwrap(), &serde_json::json!("Tech Store"));
+    assert_eq!(
+        record.data.get("store_name").unwrap(),
+        &serde_json::json!("Tech Store")
+    );
 
     let all_names = record.data.get("all_product_names").unwrap();
     assert_eq!(all_names, &serde_json::json!(["Laptop", "Mouse", "Desk"]));
@@ -246,7 +260,10 @@ output_formats = ["json"]
     assert_eq!(all_prices, &serde_json::json!([999.99, 29.99, 299.99]));
 
     let all_categories = record.data.get("all_categories").unwrap();
-    assert_eq!(all_categories, &serde_json::json!(["electronics", "electronics", "furniture"]));
+    assert_eq!(
+        all_categories,
+        &serde_json::json!(["electronics", "electronics", "furniture"])
+    );
 
     api_mock.assert();
     println!("✅ Flat mapping test passed!");
@@ -341,11 +358,8 @@ output_formats = ["json"]
 
     for pipeline_def in &modified_config.pipelines {
         let storage = LocalStorage::new(pipeline_def.load.output_path.clone());
-        let contextual_pipeline = SequenceAwarePipeline::new(
-            pipeline_def.name.clone(),
-            storage,
-            pipeline_def.clone(),
-        );
+        let contextual_pipeline =
+            SequenceAwarePipeline::new(pipeline_def.name.clone(), storage, pipeline_def.clone());
         sequence.add_pipeline(Box::new(contextual_pipeline));
     }
 
@@ -356,12 +370,24 @@ output_formats = ["json"]
     assert_eq!(results[0].records.len(), 1);
 
     let record = &results[0].records[0];
-    println!("🔍 Record keys: {:?}", record.data.keys().collect::<Vec<_>>());
+    println!(
+        "🔍 Record keys: {:?}",
+        record.data.keys().collect::<Vec<_>>()
+    );
 
     // 驗證混合操作結果
-    assert_eq!(record.data.get("dept_name").unwrap(), &serde_json::json!("Engineering"));
-    assert_eq!(record.data.get("first_team_name").unwrap(), &serde_json::json!("Backend Team"));
-    assert_eq!(record.data.get("last_team_name").unwrap(), &serde_json::json!("DevOps Team"));
+    assert_eq!(
+        record.data.get("dept_name").unwrap(),
+        &serde_json::json!("Engineering")
+    );
+    assert_eq!(
+        record.data.get("first_team_name").unwrap(),
+        &serde_json::json!("Backend Team")
+    );
+    assert_eq!(
+        record.data.get("last_team_name").unwrap(),
+        &serde_json::json!("DevOps Team")
+    );
 
     assert_eq!(
         record.data.get("all_team_names").unwrap(),

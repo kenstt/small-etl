@@ -277,9 +277,17 @@ output_formats = ["json"]
 
     println!("📊 Execution completed. Results:");
     for (i, result) in results.iter().enumerate() {
-        println!("   {}. {} - {} records", i + 1, result.pipeline_name, result.records.len());
+        println!(
+            "   {}. {} - {} records",
+            i + 1,
+            result.pipeline_name,
+            result.records.len()
+        );
         if !result.records.is_empty() {
-            println!("      First record keys: {:?}", result.records[0].data.keys().collect::<Vec<_>>());
+            println!(
+                "      First record keys: {:?}",
+                result.records[0].data.keys().collect::<Vec<_>>()
+            );
         }
     }
 

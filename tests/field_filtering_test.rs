@@ -2,8 +2,7 @@ use anyhow::Result;
 use httpmock::prelude::*;
 use samll_etl::config::sequence_config::SequenceConfig;
 use samll_etl::core::{
-    contextual_pipeline::SequenceAwarePipeline,
-    pipeline_sequence::PipelineSequence,
+    contextual_pipeline::SequenceAwarePipeline, pipeline_sequence::PipelineSequence,
 };
 use samll_etl::LocalStorage;
 use tempfile::TempDir;
@@ -98,11 +97,8 @@ output_formats = ["json"]
 
     for pipeline_def in &modified_config.pipelines {
         let storage = LocalStorage::new(pipeline_def.load.output_path.clone());
-        let contextual_pipeline = SequenceAwarePipeline::new(
-            pipeline_def.name.clone(),
-            storage,
-            pipeline_def.clone(),
-        );
+        let contextual_pipeline =
+            SequenceAwarePipeline::new(pipeline_def.name.clone(), storage, pipeline_def.clone());
         sequence.add_pipeline(Box::new(contextual_pipeline));
     }
 
@@ -116,15 +112,24 @@ output_formats = ["json"]
 
     // 驗證第一個記錄只包含指定欄位
     let record1 = &results[0].records[0];
-    println!("🔍 Record 1 keys: {:?}", record1.data.keys().collect::<Vec<_>>());
+    println!(
+        "🔍 Record 1 keys: {:?}",
+        record1.data.keys().collect::<Vec<_>>()
+    );
 
     // 應該包含的欄位
     assert!(record1.data.contains_key("id"));
     assert!(record1.data.contains_key("name"));
     assert!(record1.data.contains_key("email"));
     assert_eq!(record1.data.get("id").unwrap(), &serde_json::json!(1));
-    assert_eq!(record1.data.get("name").unwrap(), &serde_json::json!("John Doe"));
-    assert_eq!(record1.data.get("email").unwrap(), &serde_json::json!("john@example.com"));
+    assert_eq!(
+        record1.data.get("name").unwrap(),
+        &serde_json::json!("John Doe")
+    );
+    assert_eq!(
+        record1.data.get("email").unwrap(),
+        &serde_json::json!("john@example.com")
+    );
 
     // 不應該包含的敏感欄位
     assert!(!record1.data.contains_key("password"));
@@ -140,8 +145,14 @@ output_formats = ["json"]
     assert!(record2.data.contains_key("name"));
     assert!(record2.data.contains_key("email"));
     assert_eq!(record2.data.get("id").unwrap(), &serde_json::json!(2));
-    assert_eq!(record2.data.get("name").unwrap(), &serde_json::json!("Jane Smith"));
-    assert_eq!(record2.data.get("email").unwrap(), &serde_json::json!("jane@example.com"));
+    assert_eq!(
+        record2.data.get("name").unwrap(),
+        &serde_json::json!("Jane Smith")
+    );
+    assert_eq!(
+        record2.data.get("email").unwrap(),
+        &serde_json::json!("jane@example.com")
+    );
 
     // 確保敏感資料被過濾掉
     assert!(!record2.data.contains_key("password"));
@@ -223,11 +234,8 @@ output_formats = ["json"]
 
     for pipeline_def in &modified_config.pipelines {
         let storage = LocalStorage::new(pipeline_def.load.output_path.clone());
-        let contextual_pipeline = SequenceAwarePipeline::new(
-            pipeline_def.name.clone(),
-            storage,
-            pipeline_def.clone(),
-        );
+        let contextual_pipeline =
+            SequenceAwarePipeline::new(pipeline_def.name.clone(), storage, pipeline_def.clone());
         sequence.add_pipeline(Box::new(contextual_pipeline));
     }
 
@@ -238,7 +246,10 @@ output_formats = ["json"]
     assert_eq!(results[0].records.len(), 1);
 
     let record = &results[0].records[0];
-    println!("🔍 Record keys after exclusion: {:?}", record.data.keys().collect::<Vec<_>>());
+    println!(
+        "🔍 Record keys after exclusion: {:?}",
+        record.data.keys().collect::<Vec<_>>()
+    );
 
     // 應該保留的欄位
     assert!(record.data.contains_key("id"));
@@ -255,8 +266,14 @@ output_formats = ["json"]
 
     // 驗證具體值
     assert_eq!(record.data.get("id").unwrap(), &serde_json::json!(123));
-    assert_eq!(record.data.get("name").unwrap(), &serde_json::json!("Alice Johnson"));
-    assert_eq!(record.data.get("email").unwrap(), &serde_json::json!("alice@example.com"));
+    assert_eq!(
+        record.data.get("name").unwrap(),
+        &serde_json::json!("Alice Johnson")
+    );
+    assert_eq!(
+        record.data.get("email").unwrap(),
+        &serde_json::json!("alice@example.com")
+    );
 
     api_mock.assert();
     println!("✅ exclude_fields test passed!");
@@ -356,11 +373,8 @@ output_formats = ["json"]
 
     for pipeline_def in &modified_config.pipelines {
         let storage = LocalStorage::new(pipeline_def.load.output_path.clone());
-        let contextual_pipeline = SequenceAwarePipeline::new(
-            pipeline_def.name.clone(),
-            storage,
-            pipeline_def.clone(),
-        );
+        let contextual_pipeline =
+            SequenceAwarePipeline::new(pipeline_def.name.clone(), storage, pipeline_def.clone());
         sequence.add_pipeline(Box::new(contextual_pipeline));
     }
 
@@ -371,7 +385,10 @@ output_formats = ["json"]
     assert_eq!(results[0].records.len(), 1);
 
     let record = &results[0].records[0];
-    println!("🔍 Final record keys: {:?}", record.data.keys().collect::<Vec<_>>());
+    println!(
+        "🔍 Final record keys: {:?}",
+        record.data.keys().collect::<Vec<_>>()
+    );
 
     // 應該包含的映射後且被保留的欄位
     assert!(record.data.contains_key("user_id"));
@@ -381,15 +398,24 @@ output_formats = ["json"]
 
     // 驗證值
     assert_eq!(record.data.get("user_id").unwrap(), &serde_json::json!(999));
-    assert_eq!(record.data.get("full_name").unwrap(), &serde_json::json!("Bob Wilson"));
-    assert_eq!(record.data.get("email_address").unwrap(), &serde_json::json!("bob@example.com"));
-    assert_eq!(record.data.get("theme").unwrap(), &serde_json::json!("dark"));
+    assert_eq!(
+        record.data.get("full_name").unwrap(),
+        &serde_json::json!("Bob Wilson")
+    );
+    assert_eq!(
+        record.data.get("email_address").unwrap(),
+        &serde_json::json!("bob@example.com")
+    );
+    assert_eq!(
+        record.data.get("theme").unwrap(),
+        &serde_json::json!("dark")
+    );
 
     // 不應該包含的欄位（被過濾掉的敏感資料）
-    assert!(!record.data.contains_key("ssn"));           // 雖然被映射了，但不在 keep_only_fields 中
-    assert!(!record.data.contains_key("user"));         // 原始巢狀結構
-    assert!(!record.data.contains_key("metadata"));     // 元資料
-    assert!(!record.data.contains_key("internal"));     // 內部資料
+    assert!(!record.data.contains_key("ssn")); // 雖然被映射了，但不在 keep_only_fields 中
+    assert!(!record.data.contains_key("user")); // 原始巢狀結構
+    assert!(!record.data.contains_key("metadata")); // 元資料
+    assert!(!record.data.contains_key("internal")); // 內部資料
 
     api_mock.assert();
     println!("✅ Field filtering with mapping test passed!");

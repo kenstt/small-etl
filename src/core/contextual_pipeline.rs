@@ -215,13 +215,56 @@ impl<S: Storage> SequenceAwarePipeline<S> {
         Ok(processed)
     }
 
-    /// 處理 payload 模板，替換參數
+    /// 處理 payload 模板，替換參數 (支援 shared data 和 record data)
     fn process_payload_template(
         &self,
         template: &str,
         record_data: Option<&HashMap<String, serde_json::Value>>,
+        context: &PipelineContext,
     ) -> Result<String> {
         let mut processed = template.to_string();
+
+        // 替換共享數據中的參數 {{key}}
+        if processed.contains("{{") && processed.contains("}}") {
+            let re = regex::Regex::new(r"\{\{([^}]+)\}\}").unwrap();
+            processed = re
+                .replace_all(&processed, |caps: &regex::Captures| {
+                    let key = &caps[1];
+                    if let Some(shared_value) = context.get_shared_data(key) {
+                        match shared_value {
+                            serde_json::Value::String(s) => s.clone(),
+                            serde_json::Value::Number(n) => n.to_string(),
+                            serde_json::Value::Bool(b) => b.to_string(),
+                            serde_json::Value::Null => "null".to_string(),
+                            _ => serde_json::to_string(shared_value)
+                                .unwrap_or_default()
+                                .trim_matches('"')
+                                .to_string(),
+                        }
+                    } else {
+                        // 嘗試從記錄數據中查找
+                        if let Some(record_data) = record_data {
+                            if let Some(record_value) = record_data.get(key) {
+                                match record_value {
+                                    serde_json::Value::String(s) => s.clone(),
+                                    serde_json::Value::Number(n) => n.to_string(),
+                                    serde_json::Value::Bool(b) => b.to_string(),
+                                    serde_json::Value::Null => "null".to_string(),
+                                    _ => serde_json::to_string(record_value)
+                                        .unwrap_or_default()
+                                        .trim_matches('"')
+                                        .to_string(),
+                                }
+                            } else {
+                                caps[0].to_string() // 保持原樣如果找不到
+                            }
+                        } else {
+                            caps[0].to_string() // 保持原樣如果找不到
+                        }
+                    }
+                })
+                .to_string();
+        }
 
         // 如果配置了模板參數映射
         if let Some(payload_config) = &self.config.source.payload {
@@ -445,7 +488,8 @@ impl<S: Storage> SequenceAwarePipeline<S> {
 
             // 處理請求體
             if let Some(body_template) = &payload_config.body {
-                let processed_body = self.process_payload_template(body_template, record_data)?;
+                let processed_body =
+                    self.process_payload_template(body_template, record_data, context)?;
                 if !processed_body.is_empty() {
                     tracing::debug!("📡 {}: Request body: {}", self.name, processed_body);
                     request = request.body(processed_body);
@@ -515,14 +559,17 @@ impl<S: Storage> SequenceAwarePipeline<S> {
                         if let Some(field_mapping) = &self.config.extract.field_mapping {
                             // 先處理簡單的頂層映射
                             for (original_key, value) in &obj {
-                                let mapped_key = field_mapping.get(original_key).unwrap_or(original_key);
+                                let mapped_key =
+                                    field_mapping.get(original_key).unwrap_or(original_key);
                                 data.insert(mapped_key.clone(), value.clone());
                             }
 
                             // 再處理多階層路徑映射
                             for (path, mapped_key) in field_mapping {
                                 if path.contains('.') {
-                                    if let Some(nested_value) = self.extract_nested_value(&obj, path) {
+                                    if let Some(nested_value) =
+                                        self.extract_nested_value(&obj, path)
+                                    {
                                         data.insert(mapped_key.clone(), nested_value);
                                     }
                                 }
@@ -636,7 +683,12 @@ impl<S: Storage> SequenceAwarePipeline<S> {
         obj: &serde_json::Map<String, serde_json::Value>,
         path: &str,
     ) -> Option<serde_json::Value> {
-        if path.is_empty() || path.trim_matches('.').is_empty() || path.contains("..") || path.ends_with('.') || path.starts_with('.') {
+        if path.is_empty()
+            || path.trim_matches('.').is_empty()
+            || path.contains("..")
+            || path.ends_with('.')
+            || path.starts_with('.')
+        {
             return None;
         }
 
@@ -717,7 +769,9 @@ impl<S: Storage> SequenceAwarePipeline<S> {
                                 let mut results = Vec::new();
                                 for item in arr {
                                     if let serde_json::Value::Object(item_obj) = item {
-                                        if let Some(extracted) = self.extract_nested_value(item_obj, remaining_path) {
+                                        if let Some(extracted) =
+                                            self.extract_nested_value(item_obj, remaining_path)
+                                        {
                                             results.push(extracted);
                                         }
                                     }
@@ -871,11 +925,7 @@ impl<S: Storage> ContextualPipeline for SequenceAwarePipeline<S> {
                 else if let Some(exclude_fields) = &operations.exclude_fields {
                     for field in exclude_fields {
                         if record.data.remove(field).is_some() {
-                            tracing::debug!(
-                                "🔄 {}: Excluded field '{}'",
-                                self.name,
-                                field
-                            );
+                            tracing::debug!("🔄 {}: Excluded field '{}'", self.name, field);
                         } else {
                             tracing::debug!(
                                 "🔄 {}: Field '{}' specified in exclude_fields not found",
@@ -1237,7 +1287,10 @@ mod tests {
                 "name": "John Doe",
                 "email": "john@example.com"
             }
-        }).as_object().unwrap().clone();
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
         // 測試簡單的兩層路徑
         let result = pipeline.extract_nested_value(&obj, "user.name");
@@ -1267,7 +1320,10 @@ mod tests {
                     }
                 }
             }
-        }).as_object().unwrap().clone();
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
         // 測試深層巢狀路徑
         let result = pipeline.extract_nested_value(&obj, "user.profile.personal.name");
@@ -1279,7 +1335,8 @@ mod tests {
         let result = pipeline.extract_nested_value(&obj, "user.profile.settings.theme");
         assert_eq!(result, Some(json!("dark")));
 
-        let result = pipeline.extract_nested_value(&obj, "user.profile.settings.notifications.email");
+        let result =
+            pipeline.extract_nested_value(&obj, "user.profile.settings.notifications.email");
         assert_eq!(result, Some(json!(true)));
 
         let result = pipeline.extract_nested_value(&obj, "user.profile.settings.notifications.sms");
@@ -1302,7 +1359,10 @@ mod tests {
                     "nested": "value"
                 }
             }
-        }).as_object().unwrap().clone();
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
         // 測試不同資料類型
         assert_eq!(
@@ -1352,13 +1412,28 @@ mod tests {
                     "email": "john@example.com"
                 }
             }
-        }).as_object().unwrap().clone();
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
         // 測試不存在的路徑
-        assert_eq!(pipeline.extract_nested_value(&obj, "user.nonexistent"), None);
-        assert_eq!(pipeline.extract_nested_value(&obj, "user.profile.nonexistent"), None);
-        assert_eq!(pipeline.extract_nested_value(&obj, "nonexistent.path"), None);
-        assert_eq!(pipeline.extract_nested_value(&obj, "user.name.invalid"), None);
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "user.nonexistent"),
+            None
+        );
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "user.profile.nonexistent"),
+            None
+        );
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "nonexistent.path"),
+            None
+        );
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "user.name.invalid"),
+            None
+        );
     }
 
     #[test]
@@ -1369,7 +1444,10 @@ mod tests {
             "user": {
                 "name": "John Doe"
             }
-        }).as_object().unwrap().clone();
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
         // 測試邊界情況
         assert_eq!(pipeline.extract_nested_value(&obj, ""), None);
@@ -1386,7 +1464,10 @@ mod tests {
         let obj = json!({
             "name": "Direct Value",
             "count": 123
-        }).as_object().unwrap().clone();
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
         // 測試單層欄位（雖然方法主要用於多層，但應該也能處理單層）
         assert_eq!(
@@ -1417,11 +1498,17 @@ mod tests {
                     "tags": ["tag1", "tag2"]
                 }
             }
-        }).as_object().unwrap().clone();
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
         // 當路徑中遇到陣列時，應該返回 None（因為我們期望物件）
         assert_eq!(pipeline.extract_nested_value(&obj, "users.name"), None);
-        assert_eq!(pipeline.extract_nested_value(&obj, "data.items.length"), None);
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "data.items.length"),
+            None
+        );
 
         // 但可以提取陣列本身
         assert_eq!(
@@ -1484,7 +1571,10 @@ mod tests {
                 "version": "1.0",
                 "last_updated": "2024-03-20T14:45:00Z"
             }
-        }).as_object().unwrap().clone();
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
         // 測試各種真實路徑
         assert_eq!(
@@ -1571,7 +1661,10 @@ mod tests {
                     }
                 ]
             }
-        }).as_object().unwrap().clone();
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
         // 測試正常索引存取
         assert_eq!(
@@ -1616,7 +1709,10 @@ mod tests {
         assert_eq!(pipeline.extract_nested_value(&obj, "users[-5].name"), None);
 
         // 測試非陣列上使用索引
-        assert_eq!(pipeline.extract_nested_value(&obj, "users[0].name[0]"), None);
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "users[0].name[0]"),
+            None
+        );
     }
 
     #[test]
@@ -1672,7 +1768,10 @@ mod tests {
                     ]
                 }
             ]
-        }).as_object().unwrap().clone();
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
         // 測試 flat mapping 提取所有產品名稱
         assert_eq!(
@@ -1695,7 +1794,7 @@ mod tests {
         // 測試 flat mapping 提取巢狀欄位
         assert_eq!(
             pipeline.extract_nested_value(&obj, "products[*].specs.cpu"),
-            Some(json!(["Intel i7"]))  // 只有第一個產品有 CPU
+            Some(json!(["Intel i7"])) // 只有第一個產品有 CPU
         );
 
         // 測試 flat mapping 提取訂單ID
@@ -1721,12 +1820,15 @@ mod tests {
         // 空陣列
         let obj1 = json!({
             "empty_array": []
-        }).as_object().unwrap().clone();
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
         assert_eq!(pipeline.extract_nested_value(&obj1, "empty_array[0]"), None);
         assert_eq!(
             pipeline.extract_nested_value(&obj1, "empty_array[*].name"),
-            Some(json!([]))  // 空陣列的 flat mapping 應返回空陣列
+            Some(json!([])) // 空陣列的 flat mapping 應返回空陣列
         );
 
         // 包含 null 值的陣列
@@ -1737,13 +1839,19 @@ mod tests {
                 {"name": "another_valid"},
                 {"other_field": "no_name"}
             ]
-        }).as_object().unwrap().clone();
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
         assert_eq!(
             pipeline.extract_nested_value(&obj2, "mixed_array[0].name"),
             Some(json!("valid"))
         );
-        assert_eq!(pipeline.extract_nested_value(&obj2, "mixed_array[1].name"), None);
+        assert_eq!(
+            pipeline.extract_nested_value(&obj2, "mixed_array[1].name"),
+            None
+        );
 
         // Flat mapping 應該跳過無效項目
         assert_eq!(
@@ -1754,10 +1862,90 @@ mod tests {
         // 無效的索引格式
         let obj3 = json!({
             "array": [{"name": "test"}]
-        }).as_object().unwrap().clone();
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
-        assert_eq!(pipeline.extract_nested_value(&obj3, "array[abc].name"), None);
+        assert_eq!(
+            pipeline.extract_nested_value(&obj3, "array[abc].name"),
+            None
+        );
         assert_eq!(pipeline.extract_nested_value(&obj3, "array[].name"), None);
-        assert_eq!(pipeline.extract_nested_value(&obj3, "array[1.5].name"), None);
+        assert_eq!(
+            pipeline.extract_nested_value(&obj3, "array[1.5].name"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_process_payload_template_with_shared_data() {
+        let pipeline = create_test_pipeline();
+        let mut context = PipelineContext::new("test_execution".to_string());
+
+        // 添加 shared data
+        context.add_shared_data("api_key".to_string(), serde_json::json!("secret_key_123"));
+        context.add_shared_data("user_id".to_string(), serde_json::json!(42));
+        context.add_shared_data("active".to_string(), serde_json::json!(true));
+
+        // 創建 record data
+        let mut record_data = HashMap::new();
+        record_data.insert("operation".to_string(), serde_json::json!("create_user"));
+        record_data.insert("name".to_string(), serde_json::json!("John Doe"));
+
+        // 測試包含 shared data 和 record data 的模板
+        let template = r#"{
+    "api_key": "{{api_key}}",
+    "user_id": {{user_id}},
+    "active": {{active}},
+    "operation": "{{operation}}",
+    "user_name": "{{name}}",
+    "unknown_key": "{{unknown}}"
+}"#;
+
+        let result = pipeline.process_payload_template(template, Some(&record_data), &context);
+        assert!(result.is_ok());
+
+        let processed = result.unwrap();
+
+        // 驗證 shared data 替換
+        assert!(processed.contains(r#""api_key": "secret_key_123""#));
+        assert!(processed.contains(r#""user_id": 42"#));
+        assert!(processed.contains(r#""active": true"#));
+
+        // 驗證 record data 替換
+        assert!(processed.contains(r#""operation": "create_user""#));
+        assert!(processed.contains(r#""user_name": "John Doe""#));
+
+        // 驗證未知 key 保持原樣
+        assert!(processed.contains(r#""unknown_key": "{{unknown}}""#));
+
+        println!("Processed payload: {}", processed);
+    }
+
+    #[test]
+    fn test_process_payload_template_shared_data_priority() {
+        let pipeline = create_test_pipeline();
+        let mut context = PipelineContext::new("test_execution".to_string());
+
+        // 添加 shared data
+        context.add_shared_data("key".to_string(), serde_json::json!("shared_value"));
+
+        // 創建 record data 有相同的 key
+        let mut record_data = HashMap::new();
+        record_data.insert("key".to_string(), serde_json::json!("record_value"));
+
+        let template = r#"{"value": "{{key}}"}"#;
+
+        let result = pipeline.process_payload_template(template, Some(&record_data), &context);
+        assert!(result.is_ok());
+
+        let processed = result.unwrap();
+
+        // 驗證 shared data 優先於 record data
+        assert!(processed.contains(r#""value": "shared_value""#));
+        assert!(!processed.contains("record_value"));
+
+        println!("Processed payload (priority test): {}", processed);
     }
 }

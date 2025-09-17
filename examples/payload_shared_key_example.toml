@@ -1,0 +1,128 @@
+# Payload Body 中使用 Shared Key 的範例
+# 此範例展示如何在 API 請求的 payload body 中使用 shared variables 和 shared data
+
+[sequence]
+name = "payload-shared-key-example"
+description = "Example of using shared keys in payload body"
+version = "1.0.0"
+execution_order = ["auth_pipeline", "api_pipeline"]
+
+[global]
+# 全域共享變數
+shared_variables = {
+    BASE_URL = "https://api.example.com",
+    CLIENT_ID = "your_client_id_here",
+    CLIENT_SECRET = "your_client_secret_here"
+}
+
+# 第一個 Pipeline: 獲取認證 token
+[[pipelines]]
+name = "auth_pipeline"
+description = "Authenticate and get access token"
+enabled = true
+
+[pipelines.source]
+type = "api"
+endpoint = "${BASE_URL}/oauth/token"
+method = "POST"
+
+[pipelines.source.headers]
+Content-Type = "application/json"
+
+[pipelines.source.payload]
+content_type = "application/json"
+# 在 payload body 中使用 shared variables
+body = '''
+{
+    "grant_type": "client_credentials",
+    "client_id": "{{CLIENT_ID}}",
+    "client_secret": "{{CLIENT_SECRET}}",
+    "scope": "api:read api:write"
+}
+'''
+
+[pipelines.extract]
+
+[pipelines.transform]
+# 將 access_token 導出為 shared data，供後續 pipeline 使用
+export_shared_data = { "access_token" = "access_token" }
+
+[pipelines.load]
+output_path = "./output/auth"
+output_formats = ["json"]
+
+# 第二個 Pipeline: 使用 token 調用 API
+[[pipelines]]
+name = "api_pipeline"
+description = "Call API with authentication token"
+enabled = true
+use_previous_output = true
+merge_with_api = true
+
+[pipelines.source]
+type = "api"
+endpoint = "${BASE_URL}/api/users"
+method = "POST"
+
+[pipelines.source.headers]
+# 在 header 中使用 shared data
+Authorization = "Bearer {{access_token}}"
+Content-Type = "application/json"
+
+[pipelines.source.payload]
+content_type = "application/json"
+# 在 payload body 中同時使用 shared variables 和 shared data
+body = '''
+{
+    "auth_token": "{{access_token}}",
+    "client_id": "{{CLIENT_ID}}",
+    "query": {
+        "filters": {
+            "active": true,
+            "department": "engineering"
+        },
+        "pagination": {
+            "page": 1,
+            "limit": 100
+        }
+    },
+    "metadata": {
+        "request_id": "req_{{$timestamp}}",
+        "source": "etl_pipeline"
+    }
+}
+'''
+
+[pipelines.extract]
+
+[pipelines.transform]
+
+[pipelines.load]
+output_path = "./output/users"
+output_formats = ["json", "csv"]
+
+# 範例說明:
+#
+# 1. Shared Variables 在 payload 中的使用:
+#    - {{CLIENT_ID}} 和 {{CLIENT_SECRET}} 來自 [global].shared_variables
+#    - 使用雙大括號 {{}} 語法進行替換
+#
+# 2. Shared Data 在 payload 中的使用:
+#    - {{access_token}} 來自前一個 pipeline 的 export_shared_data
+#    - 在 auth_pipeline 執行後，token 被導出為 shared data
+#    - 在 api_pipeline 中，這個 token 可以在 headers 和 payload 中使用
+#
+# 3. 混合使用:
+#    - 可以在同一個 payload 中同時使用 shared variables 和 shared data
+#    - 系統會自動查找對應的值並進行替換
+#
+# 4. 支援的資料類型:
+#    - String: 直接替換
+#    - Number: 轉換為字串後替換
+#    - Boolean: 轉換為字串後替換
+#    - 其他 JSON 類型: 序列化後替換
+#
+# 5. 替換優先級:
+#    - 首先查找 shared data（pipeline 間傳遞的資料）
+#    - 然後查找 record data（當前記錄的資料）
+#    - 如果都找不到，保持原樣（不替換）

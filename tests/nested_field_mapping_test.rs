@@ -2,8 +2,7 @@ use anyhow::Result;
 use httpmock::prelude::*;
 use samll_etl::config::sequence_config::SequenceConfig;
 use samll_etl::core::{
-    contextual_pipeline::SequenceAwarePipeline,
-    pipeline_sequence::PipelineSequence,
+    contextual_pipeline::SequenceAwarePipeline, pipeline_sequence::PipelineSequence,
 };
 use samll_etl::LocalStorage;
 use tempfile::TempDir;
@@ -97,11 +96,8 @@ output_formats = ["json"]
 
     for pipeline_def in &modified_config.pipelines {
         let storage = LocalStorage::new(pipeline_def.load.output_path.clone());
-        let contextual_pipeline = SequenceAwarePipeline::new(
-            pipeline_def.name.clone(),
-            storage,
-            pipeline_def.clone(),
-        );
+        let contextual_pipeline =
+            SequenceAwarePipeline::new(pipeline_def.name.clone(), storage, pipeline_def.clone());
         sequence.add_pipeline(Box::new(contextual_pipeline));
     }
 
@@ -114,7 +110,10 @@ output_formats = ["json"]
     assert!(!results[0].records.is_empty());
 
     let record = &results[0].records[0];
-    println!("🔍 Record data keys: {:?}", record.data.keys().collect::<Vec<_>>());
+    println!(
+        "🔍 Record data keys: {:?}",
+        record.data.keys().collect::<Vec<_>>()
+    );
 
     // 驗證頂層映射
     assert!(record.data.contains_key("user_id"));
@@ -122,19 +121,34 @@ output_formats = ["json"]
 
     // 驗證多階層映射
     assert!(record.data.contains_key("full_name"));
-    assert_eq!(record.data.get("full_name").unwrap(), &serde_json::json!("John Doe"));
+    assert_eq!(
+        record.data.get("full_name").unwrap(),
+        &serde_json::json!("John Doe")
+    );
 
     assert!(record.data.contains_key("email_address"));
-    assert_eq!(record.data.get("email_address").unwrap(), &serde_json::json!("john.doe@example.com"));
+    assert_eq!(
+        record.data.get("email_address").unwrap(),
+        &serde_json::json!("john.doe@example.com")
+    );
 
     assert!(record.data.contains_key("ui_theme"));
-    assert_eq!(record.data.get("ui_theme").unwrap(), &serde_json::json!("dark"));
+    assert_eq!(
+        record.data.get("ui_theme").unwrap(),
+        &serde_json::json!("dark")
+    );
 
     assert!(record.data.contains_key("plan_type"));
-    assert_eq!(record.data.get("plan_type").unwrap(), &serde_json::json!("premium"));
+    assert_eq!(
+        record.data.get("plan_type").unwrap(),
+        &serde_json::json!("premium")
+    );
 
     assert!(record.data.contains_key("created_date"));
-    assert_eq!(record.data.get("created_date").unwrap(), &serde_json::json!("2024-01-15T10:30:00Z"));
+    assert_eq!(
+        record.data.get("created_date").unwrap(),
+        &serde_json::json!("2024-01-15T10:30:00Z")
+    );
 
     // 驗證原始頂層欄位也存在（因為沒有被多階層路徑覆蓋）
     assert!(record.data.contains_key("user"));
@@ -233,11 +247,8 @@ output_formats = ["json"]
 
     for pipeline_def in &modified_config.pipelines {
         let storage = LocalStorage::new(pipeline_def.load.output_path.clone());
-        let contextual_pipeline = SequenceAwarePipeline::new(
-            pipeline_def.name.clone(),
-            storage,
-            pipeline_def.clone(),
-        );
+        let contextual_pipeline =
+            SequenceAwarePipeline::new(pipeline_def.name.clone(), storage, pipeline_def.clone());
         sequence.add_pipeline(Box::new(contextual_pipeline));
     }
 
@@ -248,15 +259,33 @@ output_formats = ["json"]
 
     // 檢查第一個記錄
     let record1 = &results[0].records[0];
-    assert_eq!(record1.data.get("email").unwrap(), &serde_json::json!("alice@example.com"));
-    assert_eq!(record1.data.get("phone").unwrap(), &serde_json::json!("+1-555-0101"));
-    assert_eq!(record1.data.get("city").unwrap(), &serde_json::json!("New York"));
+    assert_eq!(
+        record1.data.get("email").unwrap(),
+        &serde_json::json!("alice@example.com")
+    );
+    assert_eq!(
+        record1.data.get("phone").unwrap(),
+        &serde_json::json!("+1-555-0101")
+    );
+    assert_eq!(
+        record1.data.get("city").unwrap(),
+        &serde_json::json!("New York")
+    );
 
     // 檢查第二個記錄
     let record2 = &results[0].records[1];
-    assert_eq!(record2.data.get("email").unwrap(), &serde_json::json!("bob@example.com"));
-    assert_eq!(record2.data.get("phone").unwrap(), &serde_json::json!("+1-555-0102"));
-    assert_eq!(record2.data.get("city").unwrap(), &serde_json::json!("Los Angeles"));
+    assert_eq!(
+        record2.data.get("email").unwrap(),
+        &serde_json::json!("bob@example.com")
+    );
+    assert_eq!(
+        record2.data.get("phone").unwrap(),
+        &serde_json::json!("+1-555-0102")
+    );
+    assert_eq!(
+        record2.data.get("city").unwrap(),
+        &serde_json::json!("Los Angeles")
+    );
 
     api_mock.assert();
 

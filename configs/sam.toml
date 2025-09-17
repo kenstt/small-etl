@@ -1,0 +1,69 @@
+[sequence]
+name = "simple-demo"
+description = ""
+version = "1.0.0"
+execution_order = ["get-ma", "get-calc"]
+
+# Pipeline 1: 取得第一個用戶
+[[pipelines]]
+name = "get-ma"
+description = ""
+enabled = true
+
+[pipelines.source]
+type = "api"
+endpoint = "http://localhost:3000/ma"
+
+[pipelines.extract.field_mapping]
+ref = "ma_ref"
+id = "ma_id"
+
+[pipelines.transform.operations]
+clean_text = true           # 清理文本
+trim_whitespace = true      # 去除空白
+
+[pipelines.transform.validation]
+required_fields = ["ma_ref", "post_title"]
+max_title_length = 200
+
+[pipelines.transform.intermediate]
+title_length_threshold = 50  # 標題長度 > 50 的記錄進入中繼數據
+
+[pipelines.load]
+output_path = "./output"
+output_formats = ["csv", "tsv", "json"]  # 支援多種格式
+
+[pipelines.load.compression]
+enabled = false
+filename = "etl_output.zip"
+include_intermediate = true
+
+
+
+# Pipeline 2: 使用用戶 ID 取得詳細資訊
+[[pipelines]]
+name = "get-calc"
+description = "使用用戶 ID 取得完整用戶資訊"
+enabled = true
+dependencies = ["get-ma"]
+
+[pipelines.source]
+type = "api"
+endpoint = "http://localhost:3000/calc?ref={ma_ref}"  # 使用參數化端點
+
+[pipelines.source.data_source]
+use_previous_output = true
+from_pipeline = "get-ma"
+
+[pipelines.extract.field_mapping]
+id = "detail_id"
+value = "full_name"
+
+[pipelines.transform.operations]
+clean_text = true
+trim_whitespace = true
+
+[pipelines.load]
+output_path = "./output"
+output_formats = ["csv", "tsv", "json"]
+
