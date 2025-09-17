@@ -865,9 +865,10 @@ impl<S: Storage> ContextualPipeline for SequenceAwarePipeline<S> {
         context: &mut PipelineContext,
     ) -> Result<TransformResult> {
         let mut processed_records = Vec::new();
-        let mut csv_lines = vec!["id,data,pipeline,processed".to_string()];
-        let mut tsv_lines = vec!["id\tdata\tpipeline\tprocessed".to_string()];
+        let mut csv_lines = Vec::new();
+        let mut tsv_lines = Vec::new();
         let mut intermediate_data = Vec::new();
+        let mut headers_generated = false;
 
         tracing::info!(
             "🔄 {}: Starting contextual transform for {} records",
@@ -985,16 +986,80 @@ impl<S: Storage> ContextualPipeline for SequenceAwarePipeline<S> {
                 serde_json::Value::String(self.name.clone()),
             );
 
-            // 生成輸出格式
-            let id = record
-                .data
-                .get("id")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(index as i64);
-            let data_summary = format!("record_{}", index);
+            // 生成動態 CSV/TSV 輸出格式
+            if !headers_generated {
+                // 根據第一筆記錄生成標頭
+                let mut field_names: Vec<String> = record.data.keys().cloned().collect();
+                field_names.sort(); // 確保一致的欄位順序
 
-            csv_lines.push(format!("{},{},{},true", id, data_summary, self.name));
-            tsv_lines.push(format!("{}\t{}\t{}\ttrue", id, data_summary, self.name));
+                // 生成 CSV 標頭
+                csv_lines.push(field_names.join(","));
+
+                // 生成 TSV 標頭
+                tsv_lines.push(field_names.join("\t"));
+
+                headers_generated = true;
+
+                tracing::debug!(
+                    "🔄 {}: Generated headers for {} fields: {:?}",
+                    self.name,
+                    field_names.len(),
+                    field_names
+                );
+            }
+
+            // 根據欄位順序生成資料行
+            if headers_generated {
+                let header_line = csv_lines[0].clone(); // 複製標頭行避免借用衝突
+                let field_names: Vec<&str> = header_line.split(',').collect();
+
+                // 生成 CSV 資料行
+                let csv_values: Vec<String> = field_names
+                    .iter()
+                    .map(|field_name| {
+                        record
+                            .data
+                            .get(*field_name)
+                            .map(|value| match value {
+                                serde_json::Value::String(s) => {
+                                    // CSV 欄位轉義：包含逗號、引號或換行的字串用引號包圍
+                                    if s.contains(',') || s.contains('"') || s.contains('\n') {
+                                        format!("\"{}\"", s.replace('"', "\"\""))
+                                    } else {
+                                        s.clone()
+                                    }
+                                }
+                                serde_json::Value::Number(n) => n.to_string(),
+                                serde_json::Value::Bool(b) => b.to_string(),
+                                serde_json::Value::Null => "".to_string(),
+                                _ => serde_json::to_string(value).unwrap_or_default().trim_matches('"').to_string(),
+                            })
+                            .unwrap_or_else(|| "".to_string())
+                    })
+                    .collect();
+
+                csv_lines.push(csv_values.join(","));
+
+                // 生成 TSV 資料行
+                let tsv_values: Vec<String> = field_names
+                    .iter()
+                    .map(|field_name| {
+                        record
+                            .data
+                            .get(*field_name)
+                            .map(|value| match value {
+                                serde_json::Value::String(s) => s.replace('\t', " ").replace('\n', " "),
+                                serde_json::Value::Number(n) => n.to_string(),
+                                serde_json::Value::Bool(b) => b.to_string(),
+                                serde_json::Value::Null => "".to_string(),
+                                _ => serde_json::to_string(value).unwrap_or_default().trim_matches('"').to_string().replace('\t', " ").replace('\n', " "),
+                            })
+                            .unwrap_or_else(|| "".to_string())
+                    })
+                    .collect();
+
+                tsv_lines.push(tsv_values.join("\t"));
+            }
 
             // 檢查中繼數據條件
             if let Some(intermediate_config) = &self.config.transform.intermediate {
