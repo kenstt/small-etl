@@ -1,11 +1,9 @@
-
 pub use crate::app::pipelines::mvp_pipeline::MvpPipeline;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::toml_config::TomlConfig;
-    use crate::domain::model::{Record, TransformResult};
     use crate::domain::ports::{Pipeline, Storage};
     use crate::utils::error::Result;
     use httpmock::prelude::*;
@@ -90,7 +88,7 @@ output_formats = ["csv", "json"]
             server.base_url()
         );
 
-        let config = TomlConfig::from_str(&toml_content).unwrap();
+        let config = TomlConfig::from_toml_str(&toml_content).unwrap();
         let storage = MockStorage::new();
         let pipeline = MvpPipeline::new(storage, config);
 
@@ -148,7 +146,7 @@ output_formats = ["csv"]
             server.base_url()
         );
 
-        let config = TomlConfig::from_str(&toml_content).unwrap();
+        let config = TomlConfig::from_toml_str(&toml_content).unwrap();
         let storage = MockStorage::new();
         let pipeline = MvpPipeline::new(storage, config);
 

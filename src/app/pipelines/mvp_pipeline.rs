@@ -202,7 +202,10 @@ impl<S: Storage> Pipeline for MvpPipeline<S> {
             }
         }
 
-        tracing::info!("✅ MVP transform complete: {} records processed", processed_records.len());
+        tracing::info!(
+            "✅ MVP transform complete: {} records processed",
+            processed_records.len()
+        );
         Ok(TransformResult {
             processed_records,
             csv_output: csv_lines.join("\n"),
@@ -237,9 +240,7 @@ impl<S: Storage> Pipeline for MvpPipeline<S> {
             cursor.into_inner()
         };
 
-        self.storage
-            .write_file("mvp_output.zip", &zip_data)
-            .await?;
+        self.storage.write_file("mvp_output.zip", &zip_data).await?;
 
         tracing::info!("📦 MVP output saved: {}", output_path);
         Ok(output_path)

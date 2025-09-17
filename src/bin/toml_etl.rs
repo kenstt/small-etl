@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("📁 Loading configuration from: {}", args.config);
 
     // 載入 TOML 配置
-    let mut config = match TomlConfig::from_file(&args.config)    {
+    let mut config = match TomlConfig::from_file(&args.config) {
         Ok(config) => config,
         Err(e) => {
             eprintln!("❌ Failed to load config file '{}': {}", args.config, e);
@@ -49,7 +49,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::process::exit(1);
         }
     };
-
 
     // 應用命令列覆蓋設定
     if let Some(mvp) = args.mvp {

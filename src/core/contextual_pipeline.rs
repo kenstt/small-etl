@@ -84,7 +84,7 @@ impl<S: Storage> SequenceAwarePipeline<S> {
             return self.fetch_parameterized_api(context).await;
         } else {
             // 標準 API 呼叫
-            self.fetch_api_data().await?
+            self.fetch_api_data(context).await?
         };
         records.extend(api_records);
 
@@ -99,11 +99,13 @@ impl<S: Storage> SequenceAwarePipeline<S> {
         let param_records = if let Some(data_source) = &self.config.source.data_source {
             if data_source.use_previous_output.unwrap_or(false) {
                 if let Some(from_pipeline) = &data_source.from_pipeline {
-                    context.get_result_by_name(from_pipeline)
+                    context
+                        .get_result_by_name(from_pipeline)
                         .map(|r| r.records.clone())
                         .unwrap_or_default()
                 } else {
-                    context.get_previous_result()
+                    context
+                        .get_previous_result()
                         .map(|r| r.records.clone())
                         .unwrap_or_default()
                 }
@@ -114,14 +116,26 @@ impl<S: Storage> SequenceAwarePipeline<S> {
             Vec::new()
         };
 
-        tracing::info!("📡 {}: Making parameterized API calls for {} records", self.name, param_records.len());
+        tracing::info!(
+            "📡 {}: Making parameterized API calls for {} records",
+            self.name,
+            param_records.len()
+        );
 
         // 為每個記錄構建並呼叫 API
         for (index, record) in param_records.iter().enumerate() {
             let endpoint = self.build_parameterized_endpoint(&record.data)?;
-            tracing::debug!("📡 {}: API call {}/{}: {}", self.name, index + 1, param_records.len(), endpoint);
+            tracing::debug!(
+                "📡 {}: API call {}/{}: {}",
+                self.name,
+                index + 1,
+                param_records.len(),
+                endpoint
+            );
 
-            let api_records = self.fetch_single_api_call_with_data(&endpoint, Some(&record.data)).await?;
+            let api_records = self
+                .fetch_single_api_call_with_data(&endpoint, Some(&record.data), context)
+                .await?;
             all_records.extend(api_records);
 
             // 可選：添加延遲避免請求過於頻繁
@@ -130,12 +144,83 @@ impl<S: Storage> SequenceAwarePipeline<S> {
             }
         }
 
-        tracing::info!("📡 {}: Total records fetched from parameterized APIs: {}", self.name, all_records.len());
+        tracing::info!(
+            "📡 {}: Total records fetched from parameterized APIs: {}",
+            self.name,
+            all_records.len()
+        );
         Ok(all_records)
     }
 
+    /// 處理 header 模板，支援共享數據和記錄數據替換
+    fn process_header_template(
+        &self,
+        template: &str,
+        record_data: Option<&HashMap<String, serde_json::Value>>,
+        context: &PipelineContext,
+    ) -> Result<String> {
+        let mut processed = template.to_string();
+
+        // 替換共享數據中的參數 {{key}}
+        if processed.contains("{{") && processed.contains("}}") {
+            let re = regex::Regex::new(r"\{\{([^}]+)\}\}").unwrap();
+            processed = re
+                .replace_all(&processed, |caps: &regex::Captures| {
+                    let key = &caps[1];
+                    if let Some(shared_value) = context.get_shared_data(key) {
+                        match shared_value {
+                            serde_json::Value::String(s) => s.clone(),
+                            serde_json::Value::Number(n) => n.to_string(),
+                            serde_json::Value::Bool(b) => b.to_string(),
+                            serde_json::Value::Null => "null".to_string(),
+                            _ => serde_json::to_string(shared_value)
+                                .unwrap_or_default()
+                                .trim_matches('"')
+                                .to_string(),
+                        }
+                    } else {
+                        // 嘗試從記錄數據中查找
+                        if let Some(record_data) = record_data {
+                            if let Some(record_value) = record_data.get(key) {
+                                match record_value {
+                                    serde_json::Value::String(s) => s.clone(),
+                                    serde_json::Value::Number(n) => n.to_string(),
+                                    serde_json::Value::Bool(b) => b.to_string(),
+                                    serde_json::Value::Null => "null".to_string(),
+                                    _ => serde_json::to_string(record_value)
+                                        .unwrap_or_default()
+                                        .trim_matches('"')
+                                        .to_string(),
+                                }
+                            } else {
+                                format!("{{{{{}}}}}", key) // 保持原樣，未找到替換值
+                            }
+                        } else {
+                            format!("{{{{{}}}}}", key) // 保持原樣，未找到替換值
+                        }
+                    }
+                })
+                .to_string();
+        }
+
+        // 檢查是否還有未替換的參數
+        if processed.contains("{{") && processed.contains("}}") {
+            tracing::warn!(
+                "📡 {}: Unresolved template parameters in header: {}",
+                self.name,
+                processed
+            );
+        }
+
+        Ok(processed)
+    }
+
     /// 處理 payload 模板，替換參數
-    fn process_payload_template(&self, template: &str, record_data: Option<&HashMap<String, serde_json::Value>>) -> Result<String> {
+    fn process_payload_template(
+        &self,
+        template: &str,
+        record_data: Option<&HashMap<String, serde_json::Value>>,
+    ) -> Result<String> {
         let mut processed = template.to_string();
 
         // 如果配置了模板參數映射
@@ -151,10 +236,18 @@ impl<S: Storage> SequenceAwarePipeline<S> {
                                     serde_json::Value::Number(n) => n.to_string(),
                                     serde_json::Value::Bool(b) => b.to_string(),
                                     serde_json::Value::Null => "null".to_string(),
-                                    _ => serde_json::to_string(value).unwrap_or_default().trim_matches('"').to_string(),
+                                    _ => serde_json::to_string(value)
+                                        .unwrap_or_default()
+                                        .trim_matches('"')
+                                        .to_string(),
                                 };
                                 processed = processed.replace(&placeholder, &value_str);
-                                tracing::debug!("📡 {}: Replaced payload template {} with {}", self.name, placeholder, value_str);
+                                tracing::debug!(
+                                    "📡 {}: Replaced payload template {} with {}",
+                                    self.name,
+                                    placeholder,
+                                    value_str
+                                );
                             }
                         }
                     }
@@ -172,10 +265,18 @@ impl<S: Storage> SequenceAwarePipeline<S> {
                                 serde_json::Value::Number(n) => n.to_string(),
                                 serde_json::Value::Bool(b) => b.to_string(),
                                 serde_json::Value::Null => "null".to_string(),
-                                _ => serde_json::to_string(value).unwrap_or_default().trim_matches('"').to_string(),
+                                _ => serde_json::to_string(value)
+                                    .unwrap_or_default()
+                                    .trim_matches('"')
+                                    .to_string(),
                             };
                             processed = processed.replace(&placeholder, &value_str);
-                            tracing::debug!("📡 {}: Replaced payload parameter {} with {}", self.name, placeholder, value_str);
+                            tracing::debug!(
+                                "📡 {}: Replaced payload parameter {} with {}",
+                                self.name,
+                                placeholder,
+                                value_str
+                            );
                         }
                     }
                 }
@@ -184,22 +285,42 @@ impl<S: Storage> SequenceAwarePipeline<S> {
 
         // 檢查是否還有未替換的參數
         if processed.contains("{{") && processed.contains("}}") {
-            tracing::warn!("📡 {}: Unresolved template parameters in payload: {}", self.name, processed);
+            tracing::warn!(
+                "📡 {}: Unresolved template parameters in payload: {}",
+                self.name,
+                processed
+            );
         }
 
         Ok(processed)
     }
 
     /// 構建參數化端點 URL
-    fn build_parameterized_endpoint(&self, data: &HashMap<String, serde_json::Value>) -> Result<String> {
-        let mut endpoint = self.config.source.endpoint.as_ref()
+    fn build_parameterized_endpoint(
+        &self,
+        data: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
+        let mut endpoint = self
+            .config
+            .source
+            .endpoint
+            .as_ref()
             .ok_or_else(|| EtlError::ConfigValidationError {
                 field: "source.endpoint".to_string(),
                 message: "Endpoint is required for parameterized API calls".to_string(),
-            })?.clone();
+            })?
+            .clone();
 
-        tracing::debug!("📡 {}: Building endpoint from template: {}", self.name, endpoint);
-        tracing::debug!("📡 {}: Available data fields: {:?}", self.name, data.keys().collect::<Vec<_>>());
+        tracing::debug!(
+            "📡 {}: Building endpoint from template: {}",
+            self.name,
+            endpoint
+        );
+        tracing::debug!(
+            "📡 {}: Available data fields: {:?}",
+            self.name,
+            data.keys().collect::<Vec<_>>()
+        );
 
         // 替換 URL 中的參數佔位符 (支援 {key} 和 {{key}} 格式)
         for (key, value) in data {
@@ -214,10 +335,20 @@ impl<S: Storage> SequenceAwarePipeline<S> {
 
             if endpoint.contains(&placeholder_single) {
                 endpoint = endpoint.replace(&placeholder_single, &value_str);
-                tracing::info!("📡 {}: Replaced {} with {}", self.name, placeholder_single, value_str);
+                tracing::info!(
+                    "📡 {}: Replaced {} with {}",
+                    self.name,
+                    placeholder_single,
+                    value_str
+                );
             } else if endpoint.contains(&placeholder_double) {
                 endpoint = endpoint.replace(&placeholder_double, &value_str);
-                tracing::info!("📡 {}: Replaced {} with {}", self.name, placeholder_double, value_str);
+                tracing::info!(
+                    "📡 {}: Replaced {} with {}",
+                    self.name,
+                    placeholder_double,
+                    value_str
+                );
             }
         }
 
@@ -227,13 +358,26 @@ impl<S: Storage> SequenceAwarePipeline<S> {
         if endpoint.contains("{") && endpoint.contains("}") {
             // 找出所有未替換的參數
             let re = regex::Regex::new(r"\{([^}]+)\}").unwrap();
-            let unresolved: Vec<&str> = re.captures_iter(&endpoint)
+            let unresolved: Vec<&str> = re
+                .captures_iter(&endpoint)
                 .map(|cap| cap.get(1).unwrap().as_str())
                 .collect();
 
-            tracing::error!("📡 {}: Unresolved parameters in endpoint: {}", self.name, endpoint);
-            tracing::error!("📡 {}: Unresolved parameter names: {:?}", self.name, unresolved);
-            tracing::error!("📡 {}: Available fields were: {:?}", self.name, data.keys().collect::<Vec<_>>());
+            tracing::error!(
+                "📡 {}: Unresolved parameters in endpoint: {}",
+                self.name,
+                endpoint
+            );
+            tracing::error!(
+                "📡 {}: Unresolved parameter names: {:?}",
+                self.name,
+                unresolved
+            );
+            tracing::error!(
+                "📡 {}: Available fields were: {:?}",
+                self.name,
+                data.keys().collect::<Vec<_>>()
+            );
             return Err(crate::utils::error::EtlError::ProcessingError {
                 message: format!("Unresolved parameters in endpoint: {}. Unresolved: {:?}, Available fields: {:?}",
                     endpoint, unresolved, data.keys().collect::<Vec<_>>())
@@ -243,13 +387,23 @@ impl<S: Storage> SequenceAwarePipeline<S> {
         Ok(endpoint)
     }
 
-
     /// 執行單一 API 呼叫，支援資料參數
-    async fn fetch_single_api_call_with_data(&self, endpoint: &str, record_data: Option<&HashMap<String, serde_json::Value>>) -> Result<Vec<Record>> {
+    async fn fetch_single_api_call_with_data(
+        &self,
+        endpoint: &str,
+        record_data: Option<&HashMap<String, serde_json::Value>>,
+        context: &PipelineContext,
+    ) -> Result<Vec<Record>> {
         let mut records = Vec::new();
 
         // 決定 HTTP 方法
-        let method = self.config.source.method.as_deref().unwrap_or("GET").to_uppercase();
+        let method = self
+            .config
+            .source
+            .method
+            .as_deref()
+            .unwrap_or("GET")
+            .to_uppercase();
 
         // 構建請求
         let mut request = match method.as_str() {
@@ -260,15 +414,23 @@ impl<S: Storage> SequenceAwarePipeline<S> {
             "PATCH" => self.client.patch(endpoint),
             "HEAD" => self.client.head(endpoint),
             _ => {
-                tracing::warn!("📡 {}: Unsupported HTTP method '{}', falling back to GET", self.name, method);
+                tracing::warn!(
+                    "📡 {}: Unsupported HTTP method '{}', falling back to GET",
+                    self.name,
+                    method
+                );
                 self.client.get(endpoint)
             }
         };
 
-        // 添加自定義標頭
+        // 添加自定義標頭（支援模板替換）
         if let Some(headers) = &self.config.source.headers {
-            for (key, value) in headers {
-                request = request.header(key, value);
+            for (key, value_template) in headers {
+                // 替換 header 值中的模板參數
+                let processed_value =
+                    self.process_header_template(value_template, record_data, context)?;
+                request = request.header(key, &processed_value);
+                tracing::debug!("📡 {}: Set header {} = {}", self.name, key, processed_value);
             }
         }
 
@@ -303,7 +465,12 @@ impl<S: Storage> SequenceAwarePipeline<S> {
             request = request.timeout(std::time::Duration::from_secs(timeout));
         }
 
-        tracing::debug!("📡 {}: Making {} request to: {}", self.name, method, endpoint);
+        tracing::debug!(
+            "📡 {}: Making {} request to: {}",
+            self.name,
+            method,
+            endpoint
+        );
 
         // 執行請求
         let response = request.send().await?;
@@ -318,9 +485,7 @@ impl<S: Storage> SequenceAwarePipeline<S> {
                 // 應用字段映射
                 if let Some(field_mapping) = &self.config.extract.field_mapping {
                     for (original_key, value) in obj {
-                        let mapped_key = field_mapping
-                            .get(&original_key)
-                            .unwrap_or(&original_key);
+                        let mapped_key = field_mapping.get(&original_key).unwrap_or(&original_key);
                         data.insert(mapped_key.clone(), value);
                     }
                 } else {
@@ -339,9 +504,8 @@ impl<S: Storage> SequenceAwarePipeline<S> {
 
                         if let Some(field_mapping) = &self.config.extract.field_mapping {
                             for (original_key, value) in obj {
-                                let mapped_key = field_mapping
-                                    .get(&original_key)
-                                    .unwrap_or(&original_key);
+                                let mapped_key =
+                                    field_mapping.get(&original_key).unwrap_or(&original_key);
                                 data.insert(mapped_key.clone(), value);
                             }
                         } else {
@@ -356,25 +520,24 @@ impl<S: Storage> SequenceAwarePipeline<S> {
             }
         } else {
             let error_msg = format!("API request failed with status: {}", response.status());
-            return Err(crate::utils::error::EtlError::ProcessingError {
-                message: error_msg
-            });
+            return Err(crate::utils::error::EtlError::ProcessingError { message: error_msg });
         }
 
         Ok(records)
     }
 
     /// 從 API 獲取數據
-    async fn fetch_api_data(&self) -> Result<Vec<Record>> {
-        let endpoint = self.config.source.endpoint.as_ref()
-            .ok_or_else(|| EtlError::ConfigValidationError {
+    async fn fetch_api_data(&self, context: &PipelineContext) -> Result<Vec<Record>> {
+        let endpoint = self.config.source.endpoint.as_ref().ok_or_else(|| {
+            EtlError::ConfigValidationError {
                 field: "source.endpoint".to_string(),
                 message: "Endpoint is required for API calls".to_string(),
-            })?;
+            }
+        })?;
 
-        self.fetch_single_api_call_with_data(endpoint, None).await
+        self.fetch_single_api_call_with_data(endpoint, None, context)
+            .await
     }
-
 
     /// 應用數據處理操作
     fn apply_data_processing(&self, mut records: Vec<Record>) -> Vec<Record> {
@@ -389,7 +552,9 @@ impl<S: Storage> SequenceAwarePipeline<S> {
                         let key: Vec<String> = dedup_fields
                             .iter()
                             .map(|field| {
-                                record.data.get(field)
+                                record
+                                    .data
+                                    .get(field)
                                     .map(|v| v.to_string())
                                     .unwrap_or_default()
                             })
@@ -426,9 +591,18 @@ impl<S: Storage> SequenceAwarePipeline<S> {
                         (None, None) => std::cmp::Ordering::Equal,
                     };
 
-                    if ascending { comparison } else { comparison.reverse() }
+                    if ascending {
+                        comparison
+                    } else {
+                        comparison.reverse()
+                    }
                 });
-                tracing::info!("🔄 {}: Sorted {} records by '{}'", self.name, records.len(), sort_field);
+                tracing::info!(
+                    "🔄 {}: Sorted {} records by '{}'",
+                    self.name,
+                    records.len(),
+                    sort_field
+                );
             }
         }
 
@@ -451,21 +625,29 @@ impl<S: Storage> ContextualPipeline for SequenceAwarePipeline<S> {
         // 應用數據處理操作
         let processed_records = self.apply_data_processing(raw_records);
 
-        tracing::info!("📥 {}: Extracted {} records", self.name, processed_records.len());
+        tracing::info!(
+            "📥 {}: Extracted {} records",
+            self.name,
+            processed_records.len()
+        );
         Ok(processed_records)
     }
 
     async fn transform_with_context(
         &self,
         data: Vec<Record>,
-        context: &PipelineContext,
+        context: &mut PipelineContext,
     ) -> Result<TransformResult> {
         let mut processed_records = Vec::new();
         let mut csv_lines = vec!["id,data,pipeline,processed".to_string()];
         let mut tsv_lines = vec!["id\tdata\tpipeline\tprocessed".to_string()];
         let mut intermediate_data = Vec::new();
 
-        tracing::info!("🔄 {}: Starting contextual transform for {} records", self.name, data.len());
+        tracing::info!(
+            "🔄 {}: Starting contextual transform for {} records",
+            self.name,
+            data.len()
+        );
 
         for (index, mut record) in data.into_iter().enumerate() {
             // 應用轉換操作
@@ -482,10 +664,8 @@ impl<S: Storage> ContextualPipeline for SequenceAwarePipeline<S> {
                 // 標準化字段
                 if let Some(normalize_fields) = &operations.normalize_fields {
                     for field in normalize_fields {
-                        if let Some(value) = record.data.get_mut(field) {
-                            if let serde_json::Value::String(s) = value {
-                                *s = s.to_lowercase();
-                            }
+                        if let Some(serde_json::Value::String(s)) = record.data.get_mut(field) {
+                            *s = s.to_lowercase();
                         }
                     }
                 }
@@ -500,7 +680,7 @@ impl<S: Storage> ContextualPipeline for SequenceAwarePipeline<S> {
                             // 這裡可以實作更複雜的查找邏輯
                             record.data.insert(
                                 target_field.clone(),
-                                serde_json::Value::String(format!("enriched_{}", lookup_value))
+                                serde_json::Value::String(format!("enriched_{}", lookup_value)),
                             );
                         }
                     }
@@ -513,7 +693,9 @@ impl<S: Storage> ContextualPipeline for SequenceAwarePipeline<S> {
                         let computed_value = match expression.as_str() {
                             "record_index" => serde_json::Value::Number(index.into()),
                             "pipeline_name" => serde_json::Value::String(self.name.clone()),
-                            "execution_id" => serde_json::Value::String(context.execution_id.clone()),
+                            "execution_id" => {
+                                serde_json::Value::String(context.execution_id.clone())
+                            }
                             _ => serde_json::Value::String(expression.clone()),
                         };
                         record.data.insert(field_name.clone(), computed_value);
@@ -522,11 +704,18 @@ impl<S: Storage> ContextualPipeline for SequenceAwarePipeline<S> {
             }
 
             // 添加處理標記
-            record.data.insert("processed".to_string(), serde_json::Value::Bool(true));
-            record.data.insert("processed_by".to_string(), serde_json::Value::String(self.name.clone()));
+            record
+                .data
+                .insert("processed".to_string(), serde_json::Value::Bool(true));
+            record.data.insert(
+                "processed_by".to_string(),
+                serde_json::Value::String(self.name.clone()),
+            );
 
             // 生成輸出格式
-            let id = record.data.get("id")
+            let id = record
+                .data
+                .get("id")
                 .and_then(|v| v.as_i64())
                 .unwrap_or(index as i64);
             let data_summary = format!("record_{}", index);
@@ -558,9 +747,33 @@ impl<S: Storage> ContextualPipeline for SequenceAwarePipeline<S> {
                     // 導出到共享數據
                     if intermediate_config.export_to_shared.unwrap_or(false) {
                         if let Some(shared_key) = &intermediate_config.shared_key {
-                            // 這裡需要修改 context 來更新共享數據
-                            // 目前的實作中 context 是不可變的，需要重新設計
-                            tracing::debug!("📤 {}: Would export to shared data with key '{}'", self.name, shared_key);
+                            // 從記錄中提取需要的值（例如 token）
+                            for (key, value) in &record.data {
+                                let full_key = if shared_key.is_empty() {
+                                    key.clone()
+                                } else {
+                                    format!("{}_{}", shared_key, key)
+                                };
+
+                                // 特殊處理 token 字段
+                                if key == "token" || key == "access_token" {
+                                    context.add_shared_data("token".to_string(), value.clone());
+                                    tracing::info!(
+                                        "📤 {}: Exported {} to shared data as 'token'",
+                                        self.name,
+                                        key
+                                    );
+                                } else {
+                                    let full_key_clone = full_key.clone();
+                                    context.add_shared_data(full_key, value.clone());
+                                    tracing::debug!(
+                                        "📤 {}: Exported {} to shared data as '{}'",
+                                        self.name,
+                                        key,
+                                        full_key_clone
+                                    );
+                                }
+                            }
                         }
                     }
                 }
@@ -594,14 +807,21 @@ impl<S: Storage> ContextualPipeline for SequenceAwarePipeline<S> {
             pattern
                 .replace("{pipeline_name}", &self.name)
                 .replace("{execution_id}", &context.execution_id)
-                .replace("{timestamp}", &chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string())
+                .replace(
+                    "{timestamp}",
+                    &chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string(),
+                )
         } else {
             format!("{}_output.zip", self.name)
         };
 
         let output_path = format!("{}/{}", self.config.load.output_path, filename);
 
-        tracing::info!("💾 {}: Starting contextual load to: {}", self.name, output_path);
+        tracing::info!(
+            "💾 {}: Starting contextual load to: {}",
+            self.name,
+            output_path
+        );
 
         // 創建 ZIP 文件
         let zip_data = {
@@ -641,9 +861,18 @@ impl<S: Storage> ContextualPipeline for SequenceAwarePipeline<S> {
                 if compression.include_metadata.unwrap_or(false) {
                     zip.start_file::<_, ()>("metadata.json", FileOptions::default())?;
                     let mut metadata = HashMap::new();
-                    metadata.insert("pipeline_name".to_string(), serde_json::Value::String(self.name.clone()));
-                    metadata.insert("execution_id".to_string(), serde_json::Value::String(context.execution_id.clone()));
-                    metadata.insert("timestamp".to_string(), serde_json::Value::String(chrono::Utc::now().to_rfc3339()));
+                    metadata.insert(
+                        "pipeline_name".to_string(),
+                        serde_json::Value::String(self.name.clone()),
+                    );
+                    metadata.insert(
+                        "execution_id".to_string(),
+                        serde_json::Value::String(context.execution_id.clone()),
+                    );
+                    metadata.insert(
+                        "timestamp".to_string(),
+                        serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
+                    );
                     let metadata_json = serde_json::to_string_pretty(&metadata)?;
                     zip.write_all(metadata_json.as_bytes())?;
                 }
@@ -679,11 +908,13 @@ impl<S: Storage> ContextualPipeline for SequenceAwarePipeline<S> {
             // 檢查記錄數條件
             if let Some(record_condition) = &conditions.when_records_count {
                 let record_count = if let Some(from_pipeline) = &record_condition.from_pipeline {
-                    context.get_result_by_name(from_pipeline)
+                    context
+                        .get_result_by_name(from_pipeline)
                         .map(|r| r.records.len())
                         .unwrap_or(0)
                 } else {
-                    context.get_previous_result()
+                    context
+                        .get_previous_result()
                         .map(|r| r.records.len())
                         .unwrap_or(0)
                 };
@@ -717,5 +948,4 @@ impl<S: Storage> ContextualPipeline for SequenceAwarePipeline<S> {
 
         true
     }
-
 }

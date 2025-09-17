@@ -40,7 +40,9 @@ impl PipelineContext {
 
     /// 獲取指定名稱的 Pipeline 結果
     pub fn get_result_by_name(&self, name: &str) -> Option<&PipelineResult> {
-        self.previous_results.iter().find(|r| r.pipeline_name == name)
+        self.previous_results
+            .iter()
+            .find(|r| r.pipeline_name == name)
     }
 
     /// 獲取所有之前處理的記錄
@@ -72,7 +74,11 @@ impl PipelineContext {
     }
 
     /// 與前一個 Pipeline 的數據合併
-    pub fn merge_with_previous(&self, pipeline_name: &str, api_records: Vec<Record>) -> Vec<Record> {
+    pub fn merge_with_previous(
+        &self,
+        pipeline_name: &str,
+        api_records: Vec<Record>,
+    ) -> Vec<Record> {
         if let Some(previous_records) = self.get_pipeline_data(pipeline_name) {
             let mut merged = Vec::new();
 
@@ -116,9 +122,13 @@ pub trait ContextualPipeline: Send + Sync {
     async fn transform_with_context(
         &self,
         data: Vec<Record>,
-        context: &PipelineContext,
+        context: &mut PipelineContext,
     ) -> Result<TransformResult>;
-    async fn load_with_context(&self, result: TransformResult, context: &PipelineContext) -> Result<String>;
+    async fn load_with_context(
+        &self,
+        result: TransformResult,
+        context: &PipelineContext,
+    ) -> Result<String>;
 
     /// 用於標識 pipeline 名稱
     fn get_name(&self) -> &str;
@@ -177,12 +187,15 @@ impl PipelineSequence {
 
             // 根據上下文決定是否執行
             if !pipeline.should_execute(&context) {
-                tracing::info!("⏭️ Skipping pipeline: {} (condition not met)", pipeline.get_name());
+                tracing::info!(
+                    "⏭️ Skipping pipeline: {} (condition not met)",
+                    pipeline.get_name()
+                );
                 continue;
             }
 
             // 執行單個 pipeline
-            match self.execute_pipeline(pipeline.as_ref(), &context).await {
+            match self.execute_pipeline(pipeline.as_ref(), &mut context).await {
                 Ok(execution_result) => {
                     let end_time = Instant::now();
                     let duration = end_time.duration_since(start_time);
@@ -220,8 +233,7 @@ impl PipelineSequence {
             if let Some(monitor) = &self.monitor {
                 monitor.log_stats("Pipeline execution completed.");
                 {
-                    if let Some(metrics) = monitor.get_stats()
-                    {
+                    if let Some(metrics) = monitor.get_stats() {
                         tracing::info!("📊 System metrics during execution: {:?}", metrics)
                     };
                 }
@@ -231,17 +243,26 @@ impl PipelineSequence {
         Ok(results)
     }
 
-    async fn execute_pipeline(&self, pipeline: &dyn ContextualPipeline, context: &PipelineContext) -> Result<PipelineExecutionResult> {
+    async fn execute_pipeline(
+        &self,
+        pipeline: &dyn ContextualPipeline,
+        context: &mut PipelineContext,
+    ) -> Result<PipelineExecutionResult> {
         // Extract
         let records = pipeline.extract_with_context(context).await?;
         tracing::debug!("📥 Extracted {} records", records.len());
 
         // Transform
         let transform_result = pipeline.transform_with_context(records, context).await?;
-        tracing::debug!("🔄 Transformed {} records", transform_result.processed_records.len());
+        tracing::debug!(
+            "🔄 Transformed {} records",
+            transform_result.processed_records.len()
+        );
 
         // Load
-        let output_path = pipeline.load_with_context(transform_result.clone(), context).await?;
+        let output_path = pipeline
+            .load_with_context(transform_result.clone(), context)
+            .await?;
         tracing::debug!("💾 Loaded data to: {}", output_path);
 
         Ok(PipelineExecutionResult {
@@ -259,15 +280,27 @@ impl PipelineSequence {
         let total_records: usize = results.iter().map(|r| r.records.len()).sum();
         let total_duration: std::time::Duration = results.iter().map(|r| r.duration).sum();
 
-        summary.insert("total_pipelines".to_string(), serde_json::Value::Number(total_pipelines.into()));
-        summary.insert("total_records".to_string(), serde_json::Value::Number(total_records.into()));
-        summary.insert("total_duration_ms".to_string(), serde_json::Value::Number((total_duration.as_millis() as u64).into()));
+        summary.insert(
+            "total_pipelines".to_string(),
+            serde_json::Value::Number(total_pipelines.into()),
+        );
+        summary.insert(
+            "total_records".to_string(),
+            serde_json::Value::Number(total_records.into()),
+        );
+        summary.insert(
+            "total_duration_ms".to_string(),
+            serde_json::Value::Number((total_duration.as_millis() as u64).into()),
+        );
 
         let pipeline_names: Vec<serde_json::Value> = results
             .iter()
             .map(|r| serde_json::Value::String(r.pipeline_name.clone()))
             .collect();
-        summary.insert("executed_pipelines".to_string(), serde_json::Value::Array(pipeline_names));
+        summary.insert(
+            "executed_pipelines".to_string(),
+            serde_json::Value::Array(pipeline_names),
+        );
 
         summary
     }

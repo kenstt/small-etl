@@ -1,4 +1,3 @@
-
 pub use crate::app::pipelines::simple_pipeline::SimplePipeline;
 
 #[cfg(test)]

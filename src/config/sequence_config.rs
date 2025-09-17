@@ -45,16 +45,16 @@ pub struct SourceConfig {
     pub retry_delay_seconds: Option<u64>,
     pub headers: Option<HashMap<String, String>>,
     pub parameters: Option<HashMap<String, String>>,
-    pub payload: Option<PayloadConfig>,     // API 請求負載設定
-    pub data_source: Option<DataSource>,    // 數據來源設定
+    pub payload: Option<PayloadConfig>,  // API 請求負載設定
+    pub data_source: Option<DataSource>, // 數據來源設定
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PayloadConfig {
-    pub body: Option<String>,                                    // JSON 字串或模板
-    pub template_params: Option<HashMap<String, String>>,        // 模板參數映射
-    pub content_type: Option<String>,                            // Content-Type header
-    pub use_previous_data_as_params: Option<bool>,              // 使用前一個 pipeline 的資料作為參數
+    pub body: Option<String>,                             // JSON 字串或模板
+    pub template_params: Option<HashMap<String, String>>, // 模板參數映射
+    pub content_type: Option<String>,                     // Content-Type header
+    pub use_previous_data_as_params: Option<bool>,        // 使用前一個 pipeline 的資料作為參數
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -176,18 +176,27 @@ impl SequenceConfig {
     /// 從 TOML 檔案載入序列配置
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let content = std::fs::read_to_string(&path).map_err(EtlError::IoError)?;
-        Self::from_str(&content)
+        Self::from_toml_str(&content)
     }
 
     /// 從 TOML 字串解析序列配置
-    pub fn from_str(content: &str) -> Result<Self> {
-        // 處理環境變數替換
-        let processed_content = Self::substitute_env_vars(content)?;
+    pub fn from_toml_str(content: &str) -> Result<Self> {
+        // 處理環境變數替換和共享變數替換
+        let processed_content = Self::substitute_all_vars(content)?;
 
         toml::from_str(&processed_content).map_err(|e| EtlError::ConfigValidationError {
             field: "sequence_toml_parsing".to_string(),
             message: format!("Sequence TOML parsing error: {}", e),
         })
+    }
+
+    /// 替換所有變數（環境變數和共享變數）
+    fn substitute_all_vars(content: &str) -> Result<String> {
+        // 首先進行環境變數替換
+        let env_substituted = Self::substitute_env_vars(content)?;
+
+        // 然後進行共享變數替換
+        Self::substitute_shared_vars(&env_substituted)
     }
 
     /// 替換環境變數
@@ -203,6 +212,67 @@ impl SequenceConfig {
         Ok(result.to_string())
     }
 
+    /// 替換共享變數
+    fn substitute_shared_vars(content: &str) -> Result<String> {
+        use regex::Regex;
+
+        // 首先嘗試解析部分配置來獲取共享變數
+        if let Ok(partial_config) = Self::parse_partial_config(content) {
+            if let Some(global) = partial_config.global {
+                if let Some(shared_vars) = global.shared_variables {
+                    let re = Regex::new(r"\$\{([^}]+)\}").unwrap();
+
+                    let result = re.replace_all(content, |caps: &regex::Captures| {
+                        let var_name = &caps[1];
+                        // 首先檢查共享變數
+                        if let Some(shared_value) = shared_vars.get(var_name) {
+                            shared_value.clone()
+                        } else {
+                            // 保持原樣，可能是環境變數已經處理過或未定義
+                            format!("${{{}}}", var_name)
+                        }
+                    });
+
+                    return Ok(result.to_string());
+                }
+            }
+        }
+
+        // 如果無法解析或沒有共享變數，直接返回原內容
+        Ok(content.to_string())
+    }
+
+    /// 部分解析配置以獲取全域設定
+    fn parse_partial_config(content: &str) -> Result<SequenceConfig> {
+        // 嘗試解析整個配置，但如果失敗則返回錯誤
+        // 這裡可能會失敗，因為還有未替換的變數
+        #[derive(Debug, Deserialize)]
+        struct PartialConfig {
+            global: Option<GlobalConfig>,
+        }
+
+        if let Ok(partial) = toml::from_str::<PartialConfig>(content) {
+            // 創建一個最小的有效配置
+            Ok(SequenceConfig {
+                sequence: SequenceInfo {
+                    name: "temp".to_string(),
+                    description: "temp".to_string(),
+                    version: "1.0.0".to_string(),
+                    execution_order: vec![],
+                },
+                pipelines: vec![],
+                global: partial.global,
+                monitoring: None,
+                error_handling: None,
+            })
+        } else {
+            Err(EtlError::ConfigValidationError {
+                field: "partial_config".to_string(),
+                message: "Cannot parse partial config for shared variables".to_string(),
+            })
+        }
+    }
+
     /// 驗證序列配置
     pub fn validate(&self) -> Result<()> {
         // 驗證執行順序中的 Pipeline 都存在
@@ -213,7 +283,10 @@ impl SequenceConfig {
             if !pipeline_names.contains(pipeline_name) {
                 return Err(EtlError::ConfigValidationError {
                     field: "sequence.execution_order".to_string(),
-                    message: format!("Pipeline '{}' in execution order not found in pipelines definition", pipeline_name),
+                    message: format!(
+                        "Pipeline '{}' in execution order not found in pipelines definition",
+                        pipeline_name
+                    ),
                 });
             }
         }
@@ -250,7 +323,7 @@ impl SequenceConfig {
             crate::utils::validation::validate_positive_number(
                 "extract.concurrent_requests",
                 concurrent,
-                1
+                1,
             )?;
         }
 
@@ -278,13 +351,13 @@ impl SequenceConfig {
         let mut rec_stack = std::collections::HashSet::new();
 
         for pipeline in &self.pipelines {
-            if !visited.contains(&pipeline.name) {
-                if self.has_circular_dependency(&pipeline.name, &mut visited, &mut rec_stack)? {
-                    return Err(EtlError::ConfigValidationError {
-                        field: "pipelines.dependencies".to_string(),
-                        message: "Circular dependency detected in pipeline configuration".to_string(),
-                    });
-                }
+            if !visited.contains(&pipeline.name)
+                && self.has_circular_dependency(&pipeline.name, &mut visited, &mut rec_stack)?
+            {
+                return Err(EtlError::ConfigValidationError {
+                    field: "pipelines.dependencies".to_string(),
+                    message: "Circular dependency detected in pipeline configuration".to_string(),
+                });
             }
         }
 
@@ -325,7 +398,8 @@ impl SequenceConfig {
 
     /// 獲取啟用的 Pipeline 列表（按執行順序）
     pub fn get_enabled_pipelines(&self) -> Vec<&PipelineDefinition> {
-        self.sequence.execution_order
+        self.sequence
+            .execution_order
             .iter()
             .filter_map(|name| self.get_pipeline(name))
             .filter(|pipeline| pipeline.enabled.unwrap_or(true))
@@ -335,7 +409,10 @@ impl SequenceConfig {
 
 impl ConfigProvider for PipelineDefinition {
     fn api_endpoint(&self) -> &str {
-        self.source.endpoint.as_deref().unwrap_or("http://localhost")
+        self.source
+            .endpoint
+            .as_deref()
+            .unwrap_or("http://localhost")
     }
 
     fn output_path(&self) -> &str {
@@ -406,7 +483,7 @@ output_path = "./output2"
 output_formats = ["json"]
 "#;
 
-        let config = SequenceConfig::from_str(toml_content).unwrap();
+        let config = SequenceConfig::from_toml_str(toml_content).unwrap();
         assert_eq!(config.sequence.name, "test-sequence");
         assert_eq!(config.pipelines.len(), 2);
         assert_eq!(config.sequence.execution_order.len(), 2);
@@ -454,7 +531,7 @@ output_path = "./output2"
 output_formats = ["csv"]
 "#;
 
-        let config = SequenceConfig::from_str(toml_content).unwrap();
+        let config = SequenceConfig::from_toml_str(toml_content).unwrap();
         assert!(config.validate().is_err());
     }
 }

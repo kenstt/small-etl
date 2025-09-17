@@ -1,6 +1,8 @@
 use samll_etl::config::sequence_config::SequenceConfig;
-use samll_etl::core::{pipeline_sequence::PipelineSequence, contextual_pipeline::SequenceAwarePipeline};
 use samll_etl::core::Storage;
+use samll_etl::core::{
+    contextual_pipeline::SequenceAwarePipeline, pipeline_sequence::PipelineSequence,
+};
 use samll_etl::utils::error::Result;
 use std::path::Path;
 
@@ -26,22 +28,22 @@ impl Storage for FileSystemStorage {
         async move {
             // 確保目錄存在
             if let Some(parent) = Path::new(&path).parent() {
-                std::fs::create_dir_all(parent).map_err(samll_etl::utils::error::EtlError::IoError)?;
+                std::fs::create_dir_all(parent)
+                    .map_err(samll_etl::utils::error::EtlError::IoError)?;
             }
 
             // 寫入文件
-            std::fs::write(&path, data)
-                .map_err(samll_etl::utils::error::EtlError::IoError)?;
+            std::fs::write(&path, data).map_err(samll_etl::utils::error::EtlError::IoError)?;
             Ok(())
         }
     }
 
-    fn read_file(&self, filename: &str) -> impl std::future::Future<Output = Result<Vec<u8>>> + Send {
+    fn read_file(
+        &self,
+        filename: &str,
+    ) -> impl std::future::Future<Output = Result<Vec<u8>>> + Send {
         let path = format!("{}/{}", self.base_path, filename);
-        async move {
-            std::fs::read(&path)
-                .map_err(samll_etl::utils::error::EtlError::IoError)
-        }
+        async move { std::fs::read(&path).map_err(samll_etl::utils::error::EtlError::IoError) }
     }
 }
 
@@ -76,8 +78,7 @@ async fn main() -> Result<()> {
     }
 
     // 創建 Pipeline 序列
-    let mut sequence = PipelineSequence::new("test-api-methods".to_string())
-        .with_monitoring(true);
+    let mut sequence = PipelineSequence::new("test-api-methods".to_string()).with_monitoring(true);
 
     // 為每個 Pipeline 定義創建 SequenceAwarePipeline
     for pipeline_name in &config.sequence.execution_order {
@@ -103,16 +104,20 @@ async fn main() -> Result<()> {
     println!("📊 執行摘要:");
 
     for result in &results {
-        println!("  - {}: {} 筆記錄, 耗時 {:?}",
-                 result.pipeline_name,
-                 result.records.len(),
-                 result.duration);
+        println!(
+            "  - {}: {} 筆記錄, 耗時 {:?}",
+            result.pipeline_name,
+            result.records.len(),
+            result.duration
+        );
     }
 
     let summary = PipelineSequence::get_execution_summary(&results);
-    println!("📈 總計: {} 個 pipelines, {} 筆記錄",
-             summary.get("total_pipelines").unwrap(),
-             summary.get("total_records").unwrap());
+    println!(
+        "📈 總計: {} 個 pipelines, {} 筆記錄",
+        summary.get("total_pipelines").unwrap(),
+        summary.get("total_records").unwrap()
+    );
 
     println!("\n🎉 測試完成！檢查 ./test-output 資料夾中的輸出文件。");
 

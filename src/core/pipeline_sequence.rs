@@ -9,8 +9,6 @@ pub use crate::app::pipelines::sequence_pipeline::ContextualPipeline;
 /// Pipeline 序列執行器
 pub use crate::app::pipelines::sequence_pipeline::PipelineSequence;
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -61,7 +59,11 @@ mod tests {
             }
         }
 
-        async fn transform_with_context(&self, data: Vec<Record>, _context: &PipelineContext) -> Result<TransformResult> {
+        async fn transform_with_context(
+            &self,
+            data: Vec<Record>,
+            _context: &mut PipelineContext,
+        ) -> Result<TransformResult> {
             Ok(TransformResult {
                 processed_records: data,
                 csv_output: String::new(),
@@ -70,7 +72,11 @@ mod tests {
             })
         }
 
-        async fn load_with_context(&self, _result: TransformResult, _context: &PipelineContext) -> Result<String> {
+        async fn load_with_context(
+            &self,
+            _result: TransformResult,
+            _context: &PipelineContext,
+        ) -> Result<String> {
             Ok(format!("/tmp/{}_output.json", self.name))
         }
 
@@ -85,8 +91,14 @@ mod tests {
 
     fn create_test_record(id: i64, title: &str) -> Record {
         let mut data = HashMap::new();
-        data.insert("id".to_string(), serde_json::Value::Number(serde_json::Number::from(id)));
-        data.insert("title".to_string(), serde_json::Value::String(title.to_string()));
+        data.insert(
+            "id".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(id)),
+        );
+        data.insert(
+            "title".to_string(),
+            serde_json::Value::String(title.to_string()),
+        );
         Record { data }
     }
 
@@ -115,11 +127,23 @@ mod tests {
     async fn test_pipeline_context_shared_data() {
         let mut context = PipelineContext::new("test".to_string());
 
-        context.add_shared_data("key1".to_string(), serde_json::Value::String("value1".to_string()));
-        context.add_shared_data("key2".to_string(), serde_json::Value::Number(serde_json::Number::from(42)));
+        context.add_shared_data(
+            "key1".to_string(),
+            serde_json::Value::String("value1".to_string()),
+        );
+        context.add_shared_data(
+            "key2".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(42)),
+        );
 
-        assert_eq!(context.get_shared_data("key1").unwrap(), &serde_json::Value::String("value1".to_string()));
-        assert_eq!(context.get_shared_data("key2").unwrap(), &serde_json::Value::Number(serde_json::Number::from(42)));
+        assert_eq!(
+            context.get_shared_data("key1").unwrap(),
+            &serde_json::Value::String("value1".to_string())
+        );
+        assert_eq!(
+            context.get_shared_data("key2").unwrap(),
+            &serde_json::Value::Number(serde_json::Number::from(42))
+        );
         assert!(context.get_shared_data("nonexistent").is_none());
     }
 
@@ -136,16 +160,30 @@ mod tests {
 
         // API 數據
         let mut api_record_data = HashMap::new();
-        api_record_data.insert("id".to_string(), serde_json::Value::Number(serde_json::Number::from(1)));
-        api_record_data.insert("description".to_string(), serde_json::Value::String("API Description".to_string()));
-        let api_records = vec![Record { data: api_record_data }];
+        api_record_data.insert(
+            "id".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(1)),
+        );
+        api_record_data.insert(
+            "description".to_string(),
+            serde_json::Value::String("API Description".to_string()),
+        );
+        let api_records = vec![Record {
+            data: api_record_data,
+        }];
 
         let merged = context.merge_with_previous("previous", api_records);
 
         assert_eq!(merged.len(), 1);
-        assert_eq!(merged[0].data.get("id").unwrap(), &serde_json::Value::Number(serde_json::Number::from(1)));
+        assert_eq!(
+            merged[0].data.get("id").unwrap(),
+            &serde_json::Value::Number(serde_json::Number::from(1))
+        );
         assert_eq!(merged[0].data.get("title").unwrap(), "Previous Title 1");
-        assert_eq!(merged[0].data.get("description").unwrap(), "API Description");
+        assert_eq!(
+            merged[0].data.get("description").unwrap(),
+            "API Description"
+        );
     }
 
     #[tokio::test]
@@ -216,14 +254,33 @@ mod tests {
 
         let summary = PipelineSequence::get_execution_summary(&results);
 
-        assert_eq!(summary.get("total_pipelines").unwrap(), &serde_json::Value::Number(2.into()));
-        assert_eq!(summary.get("total_records").unwrap(), &serde_json::Value::Number(3.into()));
-        assert_eq!(summary.get("total_duration_ms").unwrap(), &serde_json::Value::Number(300.into()));
+        assert_eq!(
+            summary.get("total_pipelines").unwrap(),
+            &serde_json::Value::Number(2.into())
+        );
+        assert_eq!(
+            summary.get("total_records").unwrap(),
+            &serde_json::Value::Number(3.into())
+        );
+        assert_eq!(
+            summary.get("total_duration_ms").unwrap(),
+            &serde_json::Value::Number(300.into())
+        );
 
-        let executed_pipelines = summary.get("executed_pipelines").unwrap().as_array().unwrap();
+        let executed_pipelines = summary
+            .get("executed_pipelines")
+            .unwrap()
+            .as_array()
+            .unwrap();
         assert_eq!(executed_pipelines.len(), 2);
-        assert_eq!(executed_pipelines[0], serde_json::Value::String("pipeline1".to_string()));
-        assert_eq!(executed_pipelines[1], serde_json::Value::String("pipeline2".to_string()));
+        assert_eq!(
+            executed_pipelines[0],
+            serde_json::Value::String("pipeline1".to_string())
+        );
+        assert_eq!(
+            executed_pipelines[1],
+            serde_json::Value::String("pipeline2".to_string())
+        );
     }
 
     #[test]

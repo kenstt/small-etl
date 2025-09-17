@@ -1,10 +1,9 @@
 use clap::Parser;
 use samll_etl::config::sequence_config::SequenceConfig;
 use samll_etl::core::{
-    contextual_pipeline::SequenceAwarePipeline,
-    pipeline_sequence::{PipelineSequence},
+    contextual_pipeline::SequenceAwarePipeline, pipeline_sequence::PipelineSequence,
 };
-use samll_etl::utils::{logger};
+use samll_etl::utils::logger;
 use samll_etl::LocalStorage;
 use std::collections::HashMap;
 
@@ -55,7 +54,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = match SequenceConfig::from_file(&args.config) {
         Ok(config) => config,
         Err(e) => {
-            eprintln!("❌ Failed to load sequence config file '{}': {}", args.config, e);
+            eprintln!(
+                "❌ Failed to load sequence config file '{}': {}",
+                args.config, e
+            );
             eprintln!("💡 Make sure the file exists and is valid TOML format");
             std::process::exit(1);
         }
@@ -71,9 +73,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("✅ Sequence configuration loaded and validated successfully");
 
     // 生成執行 ID
-    let execution_id = args.execution_id.clone().unwrap_or_else(|| {
-        format!("seq_{}", chrono::Utc::now().format("%Y%m%d_%H%M%S"))
-    });
+    let execution_id = args
+        .execution_id
+        .clone()
+        .unwrap_or_else(|| format!("seq_{}", chrono::Utc::now().format("%Y%m%d_%H%M%S")));
 
     // 顯示序列摘要
     display_sequence_summary(&config, &args, &execution_id);
@@ -85,9 +88,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // 決定監控設定
-    let monitor_enabled = args
-        .monitor
-        .unwrap_or_else(|| config.monitoring.as_ref().map(|m| m.enabled).unwrap_or(false));
+    let monitor_enabled = args.monitor.unwrap_or_else(|| {
+        config
+            .monitoring
+            .as_ref()
+            .map(|m| m.enabled)
+            .unwrap_or(false)
+    });
 
     // 創建序列執行器
     let mut sequence = PipelineSequence::new(execution_id.clone()).with_monitoring(monitor_enabled);
@@ -103,11 +110,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let storage = LocalStorage::new(pipeline_def.load.output_path.clone());
 
         // 創建 SequenceAwarePipeline
-        let contextual_pipeline = SequenceAwarePipeline::new(
-            pipeline_def.name.clone(),
-            storage,
-            pipeline_def.clone(),
-        );
+        let contextual_pipeline =
+            SequenceAwarePipeline::new(pipeline_def.name.clone(), storage, pipeline_def.clone());
 
         sequence.add_pipeline(Box::new(contextual_pipeline));
     }
@@ -163,7 +167,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn display_sequence_summary(config: &SequenceConfig, args: &Args, execution_id: &str) {
     println!("📋 Pipeline Sequence Summary:");
-    println!("  Name: {} v{}", config.sequence.name, config.sequence.version);
+    println!(
+        "  Name: {} v{}",
+        config.sequence.name, config.sequence.version
+    );
     println!("  Description: {}", config.sequence.description);
     println!("  Execution ID: {}", execution_id);
     println!("  Total Pipelines: {}", config.pipelines.len());
@@ -189,7 +196,8 @@ fn display_sequence_summary(config: &SequenceConfig, args: &Args, execution_id: 
             } else {
                 "⏸️"
             };
-            println!("  {}. {} {} - {}",
+            println!(
+                "  {}. {} {} - {}",
                 index + 1,
                 status,
                 pipeline_name,
@@ -238,7 +246,14 @@ async fn perform_dry_run(
 
     for (index, pipeline) in pipelines_to_execute.iter().enumerate() {
         println!("📦 Pipeline {}: {}", index + 1, pipeline.name);
-        println!("  📡 Source: {}", pipeline.source.endpoint.as_deref().unwrap_or("Previous pipeline output"));
+        println!(
+            "  📡 Source: {}",
+            pipeline
+                .source
+                .endpoint
+                .as_deref()
+                .unwrap_or("Previous pipeline output")
+        );
 
         if let Some(data_source) = &pipeline.source.data_source {
             if data_source.use_previous_output.unwrap_or(false) {
@@ -277,7 +292,10 @@ async fn perform_dry_run(
     }
 
     println!("📊 Summary:");
-    println!("  Total pipelines to execute: {}", pipelines_to_execute.len());
+    println!(
+        "  Total pipelines to execute: {}",
+        pipelines_to_execute.len()
+    );
     println!("  Estimated total time: Variable (depends on data size and API response time)");
     println!();
     println!("✅ Dry run analysis complete.");
@@ -326,22 +344,41 @@ async fn export_execution_metrics(
         .unwrap_or("sequence_metrics.json");
 
     let mut metrics = HashMap::new();
-    metrics.insert("execution_id", serde_json::Value::String(execution_id.to_string()));
-    metrics.insert("timestamp", serde_json::Value::String(chrono::Utc::now().to_rfc3339()));
+    metrics.insert(
+        "execution_id",
+        serde_json::Value::String(execution_id.to_string()),
+    );
+    metrics.insert(
+        "timestamp",
+        serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
+    );
 
     let summary = PipelineSequence::get_execution_summary(results);
-    metrics.insert("summary", serde_json::Value::Object(
-        summary.into_iter().collect()
-    ));
+    metrics.insert(
+        "summary",
+        serde_json::Value::Object(summary.into_iter().collect()),
+    );
 
     let pipeline_metrics: Vec<serde_json::Value> = results
         .iter()
         .map(|result| {
             let mut pipeline_data = HashMap::new();
-            pipeline_data.insert("name".to_string(), serde_json::Value::String(result.pipeline_name.clone()));
-            pipeline_data.insert("records_count".to_string(), serde_json::Value::Number(result.records.len().into()));
-            pipeline_data.insert("duration_ms".to_string(), serde_json::Value::Number((result.duration.as_millis() as u64).into()));
-            pipeline_data.insert("output_path".to_string(), serde_json::Value::String(result.output_path.clone()));
+            pipeline_data.insert(
+                "name".to_string(),
+                serde_json::Value::String(result.pipeline_name.clone()),
+            );
+            pipeline_data.insert(
+                "records_count".to_string(),
+                serde_json::Value::Number(result.records.len().into()),
+            );
+            pipeline_data.insert(
+                "duration_ms".to_string(),
+                serde_json::Value::Number((result.duration.as_millis() as u64).into()),
+            );
+            pipeline_data.insert(
+                "output_path".to_string(),
+                serde_json::Value::String(result.output_path.clone()),
+            );
 
             for (key, value) in &result.metadata {
                 pipeline_data.insert(key.clone(), value.clone());

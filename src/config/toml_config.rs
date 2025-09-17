@@ -120,11 +120,11 @@ impl TomlConfig {
     /// 從 TOML 檔案載入配置
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let content = std::fs::read_to_string(&path).map_err(EtlError::IoError)?;
-        Self::from_str(&content)
+        Self::from_toml_str(&content)
     }
 
     /// 從 TOML 字串解析配置
-    pub fn from_str(content: &str) -> Result<Self> {
+    pub fn from_toml_str(content: &str) -> Result<Self> {
         // 處理環境變數替換
         let processed_content = Self::substitute_env_vars(content)?;
 
@@ -268,7 +268,7 @@ output_path = "./test-output"
 output_formats = ["csv", "json"]
 "#;
 
-        let config = TomlConfig::from_str(toml_content).unwrap();
+        let config = TomlConfig::from_toml_str(toml_content).unwrap();
 
         assert_eq!(config.pipeline.name, "test-pipeline");
         assert_eq!(config.source.endpoint, "https://api.example.com/data");
@@ -299,7 +299,7 @@ output_path = "./output"
 output_formats = ["csv"]
 "#;
 
-        let config = TomlConfig::from_str(toml_content).unwrap();
+        let config = TomlConfig::from_toml_str(toml_content).unwrap();
         assert_eq!(config.source.endpoint, "https://test.api.com");
 
         std::env::remove_var("TEST_API_ENDPOINT");
@@ -326,7 +326,7 @@ output_path = "./output"
 output_formats = ["csv"]
 "#;
 
-        let config = TomlConfig::from_str(toml_content).unwrap();
+        let config = TomlConfig::from_toml_str(toml_content).unwrap();
         assert!(config.validate().is_err());
     }
 

@@ -131,7 +131,11 @@ impl<S: Storage, C: ConfigProvider> Pipeline for SimplePipeline<S, C> {
 
         tracing::debug!(
             "Creating ZIP file with {} files",
-            2 + if result.intermediate_data.is_empty() { 0 } else { 1 }
+            2 + if result.intermediate_data.is_empty() {
+                0
+            } else {
+                1
+            }
         );
 
         // 創建ZIP文件

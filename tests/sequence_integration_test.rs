@@ -3,7 +3,7 @@ use httpmock::prelude::*;
 use samll_etl::config::sequence_config::SequenceConfig;
 use samll_etl::core::{
     contextual_pipeline::SequenceAwarePipeline,
-    pipeline_sequence::{PipelineSequence, PipelineContext},
+    pipeline_sequence::{PipelineContext, PipelineSequence},
     Record,
 };
 use samll_etl::LocalStorage;
@@ -159,11 +159,8 @@ async fn test_pipeline_sequence_execution() -> Result<()> {
     // 添加Pipeline到序列
     for pipeline_def in &modified_config.pipelines {
         let storage = LocalStorage::new(pipeline_def.load.output_path.clone());
-        let contextual_pipeline = SequenceAwarePipeline::new(
-            pipeline_def.name.clone(),
-            storage,
-            pipeline_def.clone(),
-        );
+        let contextual_pipeline =
+            SequenceAwarePipeline::new(pipeline_def.name.clone(), storage, pipeline_def.clone());
         sequence.add_pipeline(Box::new(contextual_pipeline));
     }
 
@@ -215,11 +212,8 @@ async fn test_pipeline_sequence_with_dependency_failure() -> Result<()> {
 
     for pipeline_def in &modified_config.pipelines {
         let storage = LocalStorage::new(pipeline_def.load.output_path.clone());
-        let contextual_pipeline = SequenceAwarePipeline::new(
-            pipeline_def.name.clone(),
-            storage,
-            pipeline_def.clone(),
-        );
+        let contextual_pipeline =
+            SequenceAwarePipeline::new(pipeline_def.name.clone(), storage, pipeline_def.clone());
         sequence.add_pipeline(Box::new(contextual_pipeline));
     }
 
@@ -237,14 +231,23 @@ async fn test_pipeline_context_data_passing() -> Result<()> {
     // 創建初始數據
     let mut initial_records = Vec::new();
     let mut record_data = HashMap::new();
-    record_data.insert("test_field".to_string(), serde_json::Value::String("test_value".to_string()));
-    record_data.insert("id".to_string(), serde_json::Value::Number(serde_json::Number::from(1)));
+    record_data.insert(
+        "test_field".to_string(),
+        serde_json::Value::String("test_value".to_string()),
+    );
+    record_data.insert(
+        "id".to_string(),
+        serde_json::Value::Number(serde_json::Number::from(1)),
+    );
     initial_records.push(Record { data: record_data });
 
     // 創建 Pipeline Context
     let mut context = PipelineContext::new("test_execution".to_string());
     context.add_pipeline_data("previous_pipeline".to_string(), initial_records.clone());
-    context.add_shared_data("shared_key".to_string(), serde_json::Value::String("shared_value".to_string()));
+    context.add_shared_data(
+        "shared_key".to_string(),
+        serde_json::Value::String("shared_value".to_string()),
+    );
 
     // 測試數據獲取
     let retrieved_data = context.get_pipeline_data("previous_pipeline");
@@ -253,13 +256,22 @@ async fn test_pipeline_context_data_passing() -> Result<()> {
 
     let shared_value = context.get_shared_data("shared_key");
     assert!(shared_value.is_some());
-    assert_eq!(shared_value.unwrap(), &serde_json::Value::String("shared_value".to_string()));
+    assert_eq!(
+        shared_value.unwrap(),
+        &serde_json::Value::String("shared_value".to_string())
+    );
 
     // 測試合併數據
     let mut api_records = Vec::new();
     let mut api_data = HashMap::new();
-    api_data.insert("api_field".to_string(), serde_json::Value::String("api_value".to_string()));
-    api_data.insert("id".to_string(), serde_json::Value::Number(serde_json::Number::from(1)));
+    api_data.insert(
+        "api_field".to_string(),
+        serde_json::Value::String("api_value".to_string()),
+    );
+    api_data.insert(
+        "id".to_string(),
+        serde_json::Value::Number(serde_json::Number::from(1)),
+    );
     api_records.push(Record { data: api_data });
 
     let merged = context.merge_with_previous("previous_pipeline", api_records);
@@ -357,11 +369,8 @@ output_formats = ["json"]
 
     for pipeline_def in &modified_config.pipelines {
         let storage = LocalStorage::new(pipeline_def.load.output_path.clone());
-        let contextual_pipeline = SequenceAwarePipeline::new(
-            pipeline_def.name.clone(),
-            storage,
-            pipeline_def.clone(),
-        );
+        let contextual_pipeline =
+            SequenceAwarePipeline::new(pipeline_def.name.clone(), storage, pipeline_def.clone());
         sequence.add_pipeline(Box::new(contextual_pipeline));
     }
 
@@ -414,11 +423,8 @@ async fn test_pipeline_sequence_metrics() -> Result<()> {
 
     for pipeline_def in &modified_config.pipelines {
         let storage = LocalStorage::new(pipeline_def.load.output_path.clone());
-        let contextual_pipeline = SequenceAwarePipeline::new(
-            pipeline_def.name.clone(),
-            storage,
-            pipeline_def.clone(),
-        );
+        let contextual_pipeline =
+            SequenceAwarePipeline::new(pipeline_def.name.clone(), storage, pipeline_def.clone());
         sequence.add_pipeline(Box::new(contextual_pipeline));
     }
 
@@ -432,7 +438,8 @@ async fn test_pipeline_sequence_metrics() -> Result<()> {
     }
 
     // 測試執行摘要
-    let summary = samll_etl::core::pipeline_sequence::PipelineSequence::get_execution_summary(&results);
+    let summary =
+        samll_etl::core::pipeline_sequence::PipelineSequence::get_execution_summary(&results);
     assert!(summary.contains_key("total_pipelines"));
     assert!(summary.contains_key("total_records"));
     assert!(summary.contains_key("total_duration_ms"));

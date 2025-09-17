@@ -1,6 +1,6 @@
+use crate::domain::model::{Record, TransformResult};
 use crate::utils::error::Result;
 use async_trait::async_trait;
-use crate::domain::model::{Record, TransformResult};
 
 pub trait Storage: Send + Sync {
     fn read_file(&self, path: &str) -> impl std::future::Future<Output = Result<Vec<u8>>> + Send;
