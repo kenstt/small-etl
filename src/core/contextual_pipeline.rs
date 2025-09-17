@@ -482,11 +482,21 @@ impl<S: Storage> SequenceAwarePipeline<S> {
             if let serde_json::Value::Object(obj) = json_data {
                 let mut data = HashMap::new();
 
-                // 應用字段映射
+                // 應用字段映射（支援多階層路徑）
                 if let Some(field_mapping) = &self.config.extract.field_mapping {
-                    for (original_key, value) in obj {
-                        let mapped_key = field_mapping.get(&original_key).unwrap_or(&original_key);
-                        data.insert(mapped_key.clone(), value);
+                    // 先處理簡單的頂層映射
+                    for (original_key, value) in &obj {
+                        let mapped_key = field_mapping.get(original_key).unwrap_or(original_key);
+                        data.insert(mapped_key.clone(), value.clone());
+                    }
+
+                    // 再處理多階層路徑映射（如 "user.profile.name" = "user_name"）
+                    for (path, mapped_key) in field_mapping {
+                        if path.contains('.') {
+                            if let Some(nested_value) = self.extract_nested_value(&obj, path) {
+                                data.insert(mapped_key.clone(), nested_value);
+                            }
+                        }
                     }
                 } else {
                     // 沒有映射就直接使用原始字段
@@ -503,14 +513,23 @@ impl<S: Storage> SequenceAwarePipeline<S> {
                         let mut data = HashMap::new();
 
                         if let Some(field_mapping) = &self.config.extract.field_mapping {
-                            for (original_key, value) in obj {
-                                let mapped_key =
-                                    field_mapping.get(&original_key).unwrap_or(&original_key);
-                                data.insert(mapped_key.clone(), value);
+                            // 先處理簡單的頂層映射
+                            for (original_key, value) in &obj {
+                                let mapped_key = field_mapping.get(original_key).unwrap_or(original_key);
+                                data.insert(mapped_key.clone(), value.clone());
+                            }
+
+                            // 再處理多階層路徑映射
+                            for (path, mapped_key) in field_mapping {
+                                if path.contains('.') {
+                                    if let Some(nested_value) = self.extract_nested_value(&obj, path) {
+                                        data.insert(mapped_key.clone(), nested_value);
+                                    }
+                                }
                             }
                         } else {
-                            for (key, value) in obj {
-                                data.insert(key, value);
+                            for (key, value) in &obj {
+                                data.insert(key.clone(), value.clone());
                             }
                         }
 
@@ -607,6 +626,51 @@ impl<S: Storage> SequenceAwarePipeline<S> {
         }
 
         records
+    }
+
+    /// 從多階層 JSON 物件中提取巢狀值
+    /// 支援路徑如 "user.profile.name" 來存取巢狀欄位
+    fn extract_nested_value(
+        &self,
+        obj: &serde_json::Map<String, serde_json::Value>,
+        path: &str,
+    ) -> Option<serde_json::Value> {
+        let parts: Vec<&str> = path.split('.').collect();
+        if parts.is_empty() {
+            return None;
+        }
+
+        let mut current: &serde_json::Value = &serde_json::Value::Object(obj.clone());
+
+        for part in parts {
+            match current {
+                serde_json::Value::Object(map) => {
+                    if let Some(value) = map.get(part) {
+                        current = value;
+                    } else {
+                        tracing::debug!(
+                            "🔍 {}: Nested field '{}' not found in path '{}'",
+                            self.name,
+                            part,
+                            path
+                        );
+                        return None;
+                    }
+                }
+                _ => {
+                    tracing::debug!(
+                        "🔍 {}: Expected object at '{}' in path '{}', found: {:?}",
+                        self.name,
+                        part,
+                        path,
+                        current
+                    );
+                    return None;
+                }
+            }
+        }
+
+        Some(current.clone())
     }
 }
 
@@ -947,5 +1011,361 @@ impl<S: Storage> ContextualPipeline for SequenceAwarePipeline<S> {
         }
 
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::LocalStorage;
+    use serde_json::json;
+    use tempfile::TempDir;
+
+    // 創建測試用的 SequenceAwarePipeline
+    fn create_test_pipeline() -> SequenceAwarePipeline<LocalStorage> {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = LocalStorage::new(temp_dir.path().to_str().unwrap().to_string());
+
+        let config = PipelineDefinition {
+            name: "test_pipeline".to_string(),
+            description: None,
+            enabled: Some(true),
+            source: crate::config::sequence_config::SourceConfig {
+                r#type: "api".to_string(),
+                endpoint: Some("http://test.com".to_string()),
+                method: None,
+                timeout_seconds: None,
+                retry_attempts: None,
+                retry_delay_seconds: None,
+                headers: None,
+                parameters: None,
+                payload: None,
+                data_source: None,
+            },
+            extract: crate::config::sequence_config::ExtractConfig {
+                max_records: None,
+                concurrent_requests: None,
+                field_mapping: None,
+                filters: None,
+                data_processing: None,
+            },
+            transform: crate::config::sequence_config::TransformConfig {
+                operations: None,
+                validation: None,
+                intermediate: None,
+                data_enrichment: None,
+            },
+            load: crate::config::sequence_config::LoadConfig {
+                output_path: temp_dir.path().to_str().unwrap().to_string(),
+                output_formats: vec!["json".to_string()],
+                filename_pattern: None,
+                compression: None,
+                append_to_sequence: None,
+            },
+            dependencies: None,
+            conditions: None,
+        };
+
+        SequenceAwarePipeline::new("test_pipeline".to_string(), storage, config)
+    }
+
+    #[test]
+    fn test_extract_nested_value_simple_path() {
+        let pipeline = create_test_pipeline();
+
+        let obj = json!({
+            "user": {
+                "name": "John Doe",
+                "email": "john@example.com"
+            }
+        }).as_object().unwrap().clone();
+
+        // 測試簡單的兩層路徑
+        let result = pipeline.extract_nested_value(&obj, "user.name");
+        assert_eq!(result, Some(json!("John Doe")));
+
+        let result = pipeline.extract_nested_value(&obj, "user.email");
+        assert_eq!(result, Some(json!("john@example.com")));
+    }
+
+    #[test]
+    fn test_extract_nested_value_deep_path() {
+        let pipeline = create_test_pipeline();
+
+        let obj = json!({
+            "user": {
+                "profile": {
+                    "personal": {
+                        "name": "Jane Smith",
+                        "age": 30
+                    },
+                    "settings": {
+                        "theme": "dark",
+                        "notifications": {
+                            "email": true,
+                            "sms": false
+                        }
+                    }
+                }
+            }
+        }).as_object().unwrap().clone();
+
+        // 測試深層巢狀路徑
+        let result = pipeline.extract_nested_value(&obj, "user.profile.personal.name");
+        assert_eq!(result, Some(json!("Jane Smith")));
+
+        let result = pipeline.extract_nested_value(&obj, "user.profile.personal.age");
+        assert_eq!(result, Some(json!(30)));
+
+        let result = pipeline.extract_nested_value(&obj, "user.profile.settings.theme");
+        assert_eq!(result, Some(json!("dark")));
+
+        let result = pipeline.extract_nested_value(&obj, "user.profile.settings.notifications.email");
+        assert_eq!(result, Some(json!(true)));
+
+        let result = pipeline.extract_nested_value(&obj, "user.profile.settings.notifications.sms");
+        assert_eq!(result, Some(json!(false)));
+    }
+
+    #[test]
+    fn test_extract_nested_value_different_types() {
+        let pipeline = create_test_pipeline();
+
+        let obj = json!({
+            "data": {
+                "string_value": "test string",
+                "number_value": 42,
+                "float_value": 3.14,
+                "boolean_value": true,
+                "null_value": null,
+                "array_value": [1, 2, 3],
+                "object_value": {
+                    "nested": "value"
+                }
+            }
+        }).as_object().unwrap().clone();
+
+        // 測試不同資料類型
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "data.string_value"),
+            Some(json!("test string"))
+        );
+
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "data.number_value"),
+            Some(json!(42))
+        );
+
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "data.float_value"),
+            Some(json!(3.14))
+        );
+
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "data.boolean_value"),
+            Some(json!(true))
+        );
+
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "data.null_value"),
+            Some(json!(null))
+        );
+
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "data.array_value"),
+            Some(json!([1, 2, 3]))
+        );
+
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "data.object_value"),
+            Some(json!({"nested": "value"}))
+        );
+    }
+
+    #[test]
+    fn test_extract_nested_value_nonexistent_paths() {
+        let pipeline = create_test_pipeline();
+
+        let obj = json!({
+            "user": {
+                "name": "John Doe",
+                "profile": {
+                    "email": "john@example.com"
+                }
+            }
+        }).as_object().unwrap().clone();
+
+        // 測試不存在的路徑
+        assert_eq!(pipeline.extract_nested_value(&obj, "user.nonexistent"), None);
+        assert_eq!(pipeline.extract_nested_value(&obj, "user.profile.nonexistent"), None);
+        assert_eq!(pipeline.extract_nested_value(&obj, "nonexistent.path"), None);
+        assert_eq!(pipeline.extract_nested_value(&obj, "user.name.invalid"), None);
+    }
+
+    #[test]
+    fn test_extract_nested_value_edge_cases() {
+        let pipeline = create_test_pipeline();
+
+        let obj = json!({
+            "user": {
+                "name": "John Doe"
+            }
+        }).as_object().unwrap().clone();
+
+        // 測試邊界情況
+        assert_eq!(pipeline.extract_nested_value(&obj, ""), None);
+        assert_eq!(pipeline.extract_nested_value(&obj, "."), None);
+        assert_eq!(pipeline.extract_nested_value(&obj, "user."), None);
+        assert_eq!(pipeline.extract_nested_value(&obj, ".user"), None);
+        assert_eq!(pipeline.extract_nested_value(&obj, "user..name"), None);
+    }
+
+    #[test]
+    fn test_extract_nested_value_single_level() {
+        let pipeline = create_test_pipeline();
+
+        let obj = json!({
+            "name": "Direct Value",
+            "count": 123
+        }).as_object().unwrap().clone();
+
+        // 測試單層欄位（雖然方法主要用於多層，但應該也能處理單層）
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "name"),
+            Some(json!("Direct Value"))
+        );
+
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "count"),
+            Some(json!(123))
+        );
+
+        assert_eq!(pipeline.extract_nested_value(&obj, "nonexistent"), None);
+    }
+
+    #[test]
+    fn test_extract_nested_value_array_in_path() {
+        let pipeline = create_test_pipeline();
+
+        let obj = json!({
+            "users": [
+                {"name": "User 1"},
+                {"name": "User 2"}
+            ],
+            "data": {
+                "items": ["a", "b", "c"],
+                "metadata": {
+                    "tags": ["tag1", "tag2"]
+                }
+            }
+        }).as_object().unwrap().clone();
+
+        // 當路徑中遇到陣列時，應該返回 None（因為我們期望物件）
+        assert_eq!(pipeline.extract_nested_value(&obj, "users.name"), None);
+        assert_eq!(pipeline.extract_nested_value(&obj, "data.items.length"), None);
+
+        // 但可以提取陣列本身
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "data.items"),
+            Some(json!(["a", "b", "c"]))
+        );
+
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "data.metadata.tags"),
+            Some(json!(["tag1", "tag2"]))
+        );
+    }
+
+    #[test]
+    fn test_extract_nested_value_complex_real_world_example() {
+        let pipeline = create_test_pipeline();
+
+        // 模擬真實 API 回應結構
+        let obj = json!({
+            "id": "user_123",
+            "user": {
+                "personal": {
+                    "first_name": "John",
+                    "last_name": "Doe",
+                    "birth_date": "1990-01-15"
+                },
+                "contact": {
+                    "email": "john.doe@example.com",
+                    "phone": {
+                        "primary": "+1-555-0123",
+                        "secondary": "+1-555-0124"
+                    },
+                    "address": {
+                        "street": "123 Main St",
+                        "city": "New York",
+                        "state": "NY",
+                        "postal_code": "10001",
+                        "country": "USA"
+                    }
+                },
+                "preferences": {
+                    "language": "en-US",
+                    "timezone": "America/New_York",
+                    "notifications": {
+                        "email": true,
+                        "push": false,
+                        "sms": true
+                    }
+                },
+                "account": {
+                    "created_at": "2020-01-15T10:30:00Z",
+                    "subscription": {
+                        "plan": "premium",
+                        "expires_at": "2024-12-31T23:59:59Z",
+                        "features": ["api_access", "priority_support"]
+                    }
+                }
+            },
+            "metadata": {
+                "version": "1.0",
+                "last_updated": "2024-03-20T14:45:00Z"
+            }
+        }).as_object().unwrap().clone();
+
+        // 測試各種真實路徑
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "user.personal.first_name"),
+            Some(json!("John"))
+        );
+
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "user.contact.email"),
+            Some(json!("john.doe@example.com"))
+        );
+
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "user.contact.phone.primary"),
+            Some(json!("+1-555-0123"))
+        );
+
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "user.contact.address.city"),
+            Some(json!("New York"))
+        );
+
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "user.preferences.notifications.email"),
+            Some(json!(true))
+        );
+
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "user.account.subscription.plan"),
+            Some(json!("premium"))
+        );
+
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "user.account.subscription.features"),
+            Some(json!(["api_access", "priority_support"]))
+        );
+
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "metadata.last_updated"),
+            Some(json!("2024-03-20T14:45:00Z"))
+        );
     }
 }
