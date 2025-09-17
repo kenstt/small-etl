@@ -1,0 +1,153 @@
+# 陣列欄位映射使用範例
+# 此範例展示如何使用陣列索引和 flat mapping 功能從巢狀 JSON API 回應中提取資料
+
+[sequence]
+name = "array-field-mapping-example"
+description = "Example of array field mapping with indexing and flat mapping"
+version = "1.0.0"
+execution_order = ["user_data"]
+
+[global]
+shared_variables = { BASE_URL = "https://api.example.com" }
+
+[[pipelines]]
+name = "user_data"
+description = "Extract user data with array field mapping"
+enabled = true
+
+[pipelines.source]
+type = "api"
+endpoint = "${BASE_URL}/users/department/engineering"
+method = "GET"
+
+[pipelines.source.headers]
+Authorization = "Bearer YOUR_TOKEN_HERE"
+Accept = "application/json"
+
+[pipelines.extract]
+# 陣列欄位映射配置
+# 支援多種陣列操作語法:
+# 1. 索引存取: "array[0].field" - 取得陣列第0個元素的欄位
+# 2. 負數索引: "array[-1].field" - 取得陣列最後一個元素的欄位
+# 3. Flat mapping: "array[*].field" - 提取所有元素的欄位成為新陣列
+field_mapping = {
+    # 基本欄位映射
+    "department.id" = "dept_id",
+    "department.name" = "dept_name",
+
+    # 陣列索引存取 - 取得特定位置的元素
+    "employees[0].name" = "team_lead_name",
+    "employees[0].email" = "team_lead_email",
+    "employees[-1].name" = "newest_member_name",
+
+    # Flat mapping - 提取所有元素的欄位
+    "employees[*].name" = "all_employee_names",
+    "employees[*].email" = "all_employee_emails",
+    "employees[*].skills" = "all_employee_skills",
+
+    # 巢狀陣列操作
+    "employees[0].projects[*].name" = "team_lead_project_names",
+    "employees[*].projects[0].name" = "all_employees_main_project",
+
+    # 複雜巢狀結構
+    "department.locations[*].office.address.city" = "office_cities",
+    "department.budget.history[-1].amount" = "latest_budget"
+}
+
+[pipelines.transform]
+# 可選：進一步過濾欄位
+[pipelines.transform.operations]
+keep_only_fields = [
+    "dept_id",
+    "dept_name",
+    "team_lead_name",
+    "team_lead_email",
+    "all_employee_names",
+    "all_employee_emails",
+    "office_cities",
+    "latest_budget"
+]
+
+[pipelines.load]
+output_path = "./output"
+output_formats = ["json", "csv"]
+
+# 範例 API 回應結構:
+# {
+#   "department": {
+#     "id": "ENG001",
+#     "name": "Engineering",
+#     "locations": [
+#       {
+#         "office": {
+#           "name": "HQ",
+#           "address": {
+#             "city": "San Francisco",
+#             "country": "USA"
+#           }
+#         }
+#       },
+#       {
+#         "office": {
+#           "name": "Remote Office",
+#           "address": {
+#             "city": "Austin",
+#             "country": "USA"
+#           }
+#         }
+#       }
+#     ],
+#     "budget": {
+#       "history": [
+#         {"year": 2022, "amount": 500000},
+#         {"year": 2023, "amount": 750000},
+#         {"year": 2024, "amount": 1000000}
+#       ]
+#     }
+#   },
+#   "employees": [
+#     {
+#       "id": "EMP001",
+#       "name": "Alice Johnson",
+#       "email": "alice@company.com",
+#       "role": "Team Lead",
+#       "skills": ["Python", "Rust", "Architecture"],
+#       "projects": [
+#         {"name": "ETL Pipeline", "status": "active"},
+#         {"name": "Data Migration", "status": "completed"}
+#       ]
+#     },
+#     {
+#       "id": "EMP002",
+#       "name": "Bob Smith",
+#       "email": "bob@company.com",
+#       "role": "Senior Developer",
+#       "skills": ["JavaScript", "React", "Node.js"],
+#       "projects": [
+#         {"name": "Web Dashboard", "status": "active"}
+#       ]
+#     },
+#     {
+#       "id": "EMP003",
+#       "name": "Charlie Brown",
+#       "email": "charlie@company.com",
+#       "role": "Junior Developer",
+#       "skills": ["Python", "SQL"],
+#       "projects": [
+#         {"name": "Data Analysis", "status": "planning"}
+#       ]
+#     }
+#   ]
+# }
+#
+# 處理後的結果將包含:
+# {
+#   "dept_id": "ENG001",
+#   "dept_name": "Engineering",
+#   "team_lead_name": "Alice Johnson",
+#   "team_lead_email": "alice@company.com",
+#   "all_employee_names": ["Alice Johnson", "Bob Smith", "Charlie Brown"],
+#   "all_employee_emails": ["alice@company.com", "bob@company.com", "charlie@company.com"],
+#   "office_cities": ["San Francisco", "Austin"],
+#   "latest_budget": 1000000
+# }

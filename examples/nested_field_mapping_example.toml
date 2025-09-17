@@ -1,0 +1,83 @@
+# 多階層 Field Mapping 使用範例
+# 此範例展示如何從巢狀 JSON API 回應中提取特定欄位
+
+[sequence]
+name = "nested-field-example"
+description = "Example of nested field mapping"
+version = "1.0.0"
+execution_order = ["user_data"]
+
+[global]
+shared_variables = { BASE_URL = "https://api.example.com" }
+
+[[pipelines]]
+name = "user_data"
+description = "Extract user data with nested field mapping"
+enabled = true
+
+[pipelines.source]
+type = "api"
+endpoint = "${BASE_URL}/users/profile"
+method = "GET"
+
+[pipelines.source.headers]
+Authorization = "Bearer YOUR_TOKEN_HERE"
+Accept = "application/json"
+
+[pipelines.extract]
+# 多階層 field mapping 配置
+# 語法: "原始.巢狀.路徑" = "映射後的欄位名"
+field_mapping = {
+    "id" = "user_id",
+    "user.personal.name" = "full_name",
+    "user.personal.email" = "email",
+    "user.preferences.language" = "preferred_language",
+    "user.account.subscription.plan" = "subscription_plan",
+    "user.account.subscription.expires" = "expires_date",
+    "metadata.created_at" = "created_date"
+}
+
+[pipelines.transform]
+
+[pipelines.load]
+output_path = "./output"
+output_formats = ["json", "csv"]
+
+# 範例 API 回應:
+# {
+#   "id": 123,
+#   "user": {
+#     "personal": {
+#       "name": "John Doe",
+#       "email": "john@example.com",
+#       "age": 30
+#     },
+#     "preferences": {
+#       "language": "en",
+#       "theme": "dark"
+#     },
+#     "account": {
+#       "subscription": {
+#         "plan": "premium",
+#         "expires": "2024-12-31"
+#       },
+#       "status": "active"
+#     }
+#   },
+#   "metadata": {
+#     "created_at": "2024-01-15T10:30:00Z",
+#     "updated_at": "2024-03-20T14:45:00Z"
+#   }
+# }
+#
+# 處理後的結果將包含:
+# {
+#   "user_id": 123,
+#   "full_name": "John Doe",
+#   "email": "john@example.com",
+#   "preferred_language": "en",
+#   "subscription_plan": "premium",
+#   "expires_date": "2024-12-31",
+#   "created_date": "2024-01-15T10:30:00Z",
+#   // 加上其他未映射的原始欄位
+# }

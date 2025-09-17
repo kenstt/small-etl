@@ -630,23 +630,44 @@ impl<S: Storage> SequenceAwarePipeline<S> {
 
     /// 從多階層 JSON 物件中提取巢狀值
     /// 支援路徑如 "user.profile.name" 來存取巢狀欄位
+    /// 支援陣列索引如 "user.items[0].name" 和 flat mapping "user.items[*].name"
     fn extract_nested_value(
         &self,
         obj: &serde_json::Map<String, serde_json::Value>,
         path: &str,
     ) -> Option<serde_json::Value> {
-        let parts: Vec<&str> = path.split('.').collect();
-        if parts.is_empty() {
+        if path.is_empty() || path.trim_matches('.').is_empty() || path.contains("..") || path.ends_with('.') || path.starts_with('.') {
             return None;
         }
 
-        let mut current: &serde_json::Value = &serde_json::Value::Object(obj.clone());
+        let mut current: serde_json::Value = serde_json::Value::Object(obj.clone());
+        let mut remaining_path = path;
 
-        for part in parts {
-            match current {
+        while !remaining_path.is_empty() {
+            // 尋找下一個分隔符（. 或 [）
+            let next_delimiter = remaining_path
+                .find('.')
+                .unwrap_or(remaining_path.len())
+                .min(remaining_path.find('[').unwrap_or(remaining_path.len()));
+
+            if next_delimiter == 0 {
+                // 路徑以 . 或 [ 開頭，跳過
+                remaining_path = &remaining_path[1..];
+                continue;
+            }
+
+            let part = &remaining_path[..next_delimiter];
+            remaining_path = if next_delimiter < remaining_path.len() {
+                &remaining_path[next_delimiter..]
+            } else {
+                ""
+            };
+
+            // 處理物件欄位
+            match &current {
                 serde_json::Value::Object(map) => {
                     if let Some(value) = map.get(part) {
-                        current = value;
+                        current = value.clone();
                     } else {
                         tracing::debug!(
                             "🔍 {}: Nested field '{}' not found in path '{}'",
@@ -668,9 +689,96 @@ impl<S: Storage> SequenceAwarePipeline<S> {
                     return None;
                 }
             }
+
+            // 處理陣列索引
+            if remaining_path.starts_with('[') {
+                let end_bracket = remaining_path.find(']')?;
+                let index_str = &remaining_path[1..end_bracket];
+                remaining_path = if end_bracket + 1 < remaining_path.len() {
+                    &remaining_path[end_bracket + 1..]
+                } else {
+                    ""
+                };
+
+                // 跳過緊接的點號
+                if remaining_path.starts_with('.') {
+                    remaining_path = &remaining_path[1..];
+                }
+
+                match &current {
+                    serde_json::Value::Array(arr) => {
+                        if index_str == "*" {
+                            // Flat mapping: 提取所有元素的指定欄位
+                            if remaining_path.is_empty() {
+                                // 如果沒有更多路徑，返回整個陣列
+                                return Some(current);
+                            } else {
+                                // 遞歸提取每個元素的剩餘路徑
+                                let mut results = Vec::new();
+                                for item in arr {
+                                    if let serde_json::Value::Object(item_obj) = item {
+                                        if let Some(extracted) = self.extract_nested_value(item_obj, remaining_path) {
+                                            results.push(extracted);
+                                        }
+                                    }
+                                }
+                                return Some(serde_json::Value::Array(results));
+                            }
+                        } else {
+                            // 索引存取
+                            let index: std::result::Result<i32, _> = index_str.parse();
+                            match index {
+                                Ok(idx) => {
+                                    let actual_index = if idx < 0 {
+                                        (arr.len() as i32 + idx) as usize
+                                    } else {
+                                        idx as usize
+                                    };
+
+                                    if actual_index < arr.len() {
+                                        current = arr[actual_index].clone();
+                                    } else {
+                                        tracing::debug!(
+                                            "🔍 {}: Array index {} out of bounds (length: {}) in path '{}'",
+                                            self.name,
+                                            idx,
+                                            arr.len(),
+                                            path
+                                        );
+                                        return None;
+                                    }
+                                }
+                                Err(_) => {
+                                    tracing::debug!(
+                                        "🔍 {}: Invalid array index '{}' in path '{}'",
+                                        self.name,
+                                        index_str,
+                                        path
+                                    );
+                                    return None;
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        tracing::debug!(
+                            "🔍 {}: Expected array for indexing in path '{}', found: {:?}",
+                            self.name,
+                            path,
+                            current
+                        );
+                        return None;
+                    }
+                }
+            }
+
+            // 跳過路徑開頭的點號
+            if remaining_path.starts_with('.') {
+                remaining_path = &remaining_path[1..];
+            }
         }
 
-        Some(current.clone())
+        Some(current)
     }
 }
 
@@ -1418,5 +1526,238 @@ mod tests {
             pipeline.extract_nested_value(&obj, "metadata.last_updated"),
             Some(json!("2024-03-20T14:45:00Z"))
         );
+    }
+
+    #[test]
+    fn test_extract_nested_value_array_indexing() {
+        let pipeline = create_test_pipeline();
+
+        // 模擬包含陣列的 JSON 結構
+        let obj = json!({
+            "users": [
+                {
+                    "id": 1,
+                    "name": "Alice",
+                    "email": "alice@example.com",
+                    "tags": ["admin", "developer"]
+                },
+                {
+                    "id": 2,
+                    "name": "Bob",
+                    "email": "bob@example.com",
+                    "tags": ["user", "designer"]
+                },
+                {
+                    "id": 3,
+                    "name": "Charlie",
+                    "email": "charlie@example.com",
+                    "tags": ["user"]
+                }
+            ],
+            "company": {
+                "departments": [
+                    {
+                        "name": "Engineering",
+                        "employees": [
+                            {"name": "Dave", "role": "senior"},
+                            {"name": "Eve", "role": "junior"}
+                        ]
+                    },
+                    {
+                        "name": "Design",
+                        "employees": [
+                            {"name": "Frank", "role": "lead"}
+                        ]
+                    }
+                ]
+            }
+        }).as_object().unwrap().clone();
+
+        // 測試正常索引存取
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "users[0].name"),
+            Some(json!("Alice"))
+        );
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "users[1].email"),
+            Some(json!("bob@example.com"))
+        );
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "users[2].id"),
+            Some(json!(3))
+        );
+
+        // 測試負數索引（從後往前）
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "users[-1].name"),
+            Some(json!("Charlie"))
+        );
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "users[-2].name"),
+            Some(json!("Bob"))
+        );
+
+        // 測試嵌套陣列索引
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "company.departments[0].name"),
+            Some(json!("Engineering"))
+        );
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "company.departments[0].employees[1].name"),
+            Some(json!("Eve"))
+        );
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "company.departments[1].employees[0].role"),
+            Some(json!("lead"))
+        );
+
+        // 測試越界情況
+        assert_eq!(pipeline.extract_nested_value(&obj, "users[5].name"), None);
+        assert_eq!(pipeline.extract_nested_value(&obj, "users[-5].name"), None);
+
+        // 測試非陣列上使用索引
+        assert_eq!(pipeline.extract_nested_value(&obj, "users[0].name[0]"), None);
+    }
+
+    #[test]
+    fn test_extract_nested_value_flat_mapping() {
+        let pipeline = create_test_pipeline();
+
+        // 模擬包含陣列的 JSON 結構
+        let obj = json!({
+            "products": [
+                {
+                    "id": 101,
+                    "name": "Laptop",
+                    "price": 999.99,
+                    "category": "electronics",
+                    "specs": {
+                        "cpu": "Intel i7",
+                        "ram": "16GB"
+                    }
+                },
+                {
+                    "id": 102,
+                    "name": "Mouse",
+                    "price": 29.99,
+                    "category": "electronics",
+                    "specs": {
+                        "dpi": "1600",
+                        "wireless": true
+                    }
+                },
+                {
+                    "id": 103,
+                    "name": "Desk",
+                    "price": 299.99,
+                    "category": "furniture",
+                    "specs": {
+                        "material": "wood",
+                        "adjustable": false
+                    }
+                }
+            ],
+            "orders": [
+                {
+                    "order_id": "A001",
+                    "items": [
+                        {"product_id": 101, "quantity": 1},
+                        {"product_id": 102, "quantity": 2}
+                    ]
+                },
+                {
+                    "order_id": "A002",
+                    "items": [
+                        {"product_id": 103, "quantity": 1}
+                    ]
+                }
+            ]
+        }).as_object().unwrap().clone();
+
+        // 測試 flat mapping 提取所有產品名稱
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "products[*].name"),
+            Some(json!(["Laptop", "Mouse", "Desk"]))
+        );
+
+        // 測試 flat mapping 提取所有產品 ID
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "products[*].id"),
+            Some(json!([101, 102, 103]))
+        );
+
+        // 測試 flat mapping 提取所有價格
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "products[*].price"),
+            Some(json!([999.99, 29.99, 299.99]))
+        );
+
+        // 測試 flat mapping 提取巢狀欄位
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "products[*].specs.cpu"),
+            Some(json!(["Intel i7"]))  // 只有第一個產品有 CPU
+        );
+
+        // 測試 flat mapping 提取訂單ID
+        assert_eq!(
+            pipeline.extract_nested_value(&obj, "orders[*].order_id"),
+            Some(json!(["A001", "A002"]))
+        );
+
+        // 測試返回整個陣列（沒有更多路徑）
+        let products_array = pipeline.extract_nested_value(&obj, "products[*]");
+        assert!(products_array.is_some());
+        if let Some(serde_json::Value::Array(arr)) = products_array {
+            assert_eq!(arr.len(), 3);
+        } else {
+            panic!("Expected array result");
+        }
+    }
+
+    #[test]
+    fn test_extract_nested_value_array_edge_cases() {
+        let pipeline = create_test_pipeline();
+
+        // 空陣列
+        let obj1 = json!({
+            "empty_array": []
+        }).as_object().unwrap().clone();
+
+        assert_eq!(pipeline.extract_nested_value(&obj1, "empty_array[0]"), None);
+        assert_eq!(
+            pipeline.extract_nested_value(&obj1, "empty_array[*].name"),
+            Some(json!([]))  // 空陣列的 flat mapping 應返回空陣列
+        );
+
+        // 包含 null 值的陣列
+        let obj2 = json!({
+            "mixed_array": [
+                {"name": "valid"},
+                null,
+                {"name": "another_valid"},
+                {"other_field": "no_name"}
+            ]
+        }).as_object().unwrap().clone();
+
+        assert_eq!(
+            pipeline.extract_nested_value(&obj2, "mixed_array[0].name"),
+            Some(json!("valid"))
+        );
+        assert_eq!(pipeline.extract_nested_value(&obj2, "mixed_array[1].name"), None);
+
+        // Flat mapping 應該跳過無效項目
+        assert_eq!(
+            pipeline.extract_nested_value(&obj2, "mixed_array[*].name"),
+            Some(json!(["valid", "another_valid"]))
+        );
+
+        // 無效的索引格式
+        let obj3 = json!({
+            "array": [{"name": "test"}]
+        }).as_object().unwrap().clone();
+
+        assert_eq!(pipeline.extract_nested_value(&obj3, "array[abc].name"), None);
+        assert_eq!(pipeline.extract_nested_value(&obj3, "array[].name"), None);
+        assert_eq!(pipeline.extract_nested_value(&obj3, "array[1.5].name"), None);
     }
 }
